@@ -29,24 +29,23 @@ A modern web-based invoice management system built with **React**, **TypeScript*
    ```bash
    git clone https://github.com/your-username/my-invoice-app.git
    cd my-invoice-app
-Install dependencies:
+   ```
 
-bash
-Copy
-Edit
-npm install
-Start the development server:
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-bash
-Copy
-Edit
-npm run dev
-Open your browser at http://localhost:5173.
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
 
-🗂 Project Structure
-perl
-Copy
-Edit
+Open your browser at `http://localhost:5173`.
+
+## 🗂 Project Structure
+
+```
 my-invoice-app/
 ├── public/                 # Static files
 ├── src/                   # Application source code
@@ -58,5 +57,8 @@ my-invoice-app/
 ├── tailwind.config.js     # Tailwind CSS configuration
 ├── vite.config.ts         # Vite configuration
 └── tsconfig.json          # TypeScript configuration
-📝 License
+```
+
+## 📝 License
+
 This project is licensed under the MIT License.
