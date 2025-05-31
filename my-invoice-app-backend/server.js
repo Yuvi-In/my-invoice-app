@@ -45,6 +45,7 @@ const customerSchema = new mongoose.Schema({
     },
   },
   Address: { type: String },
+  Nickname: {type: String},
   Tax_ID: {
     type: String,
     validate: {
@@ -1007,6 +1008,7 @@ app.post('/api/invoices', async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
+    console.log('Incoming request body:', req.body); // Log raw request
     const { Document_Type, Customer_ID, Items, invoiceDateInput } = req.body;
 
     if (!Document_Type || !['Invoice', 'Quotation'].includes(Document_Type)) {
@@ -1019,8 +1021,8 @@ app.post('/api/invoices', async (req, res) => {
       throw new Error('At least one item is required in the invoice/quotation.');
     }
 
-    // Validate Items array
-    for (const [index, item] of Items.entries()) {
+    // Validate Items
+    const validatedItems = Items.map((item, index) => {
       if (!item.Item_Description || typeof item.Item_Description !== 'string') {
         throw new Error(`Item at index ${index}: Item_Description must be a non-empty string.`);
       }
@@ -1033,9 +1035,9 @@ app.post('/api/invoices', async (req, res) => {
       if (typeof item.Line_Total !== 'number' || item.Line_Total < 0) {
         throw new Error(`Item at index ${index}: Line_Total must be a non-negative number.`);
       }
-    }
-
-    console.log('Received Items:', Items); // Log received items for debugging
+      return item;
+    });
+    console.log('Validated Items:', validatedItems);
 
     const customer = await Customer.findById(Customer_ID).session(session);
     if (!customer) {
@@ -1044,29 +1046,42 @@ app.post('/api/invoices', async (req, res) => {
 
     const invoiceDate = invoiceDateInput ? new Date(invoiceDateInput) : new Date();
     if (isNaN(invoiceDate.getTime())) {
-      throw new Error('Invalid date format provided. Please use a valid date string (e.g., "2025-05-17").');
+      throw new Error('Invalid date format provided. Please use a valid date string (e.g., "2025-05-27").');
     }
 
     const documentID = await generateDocumentID(Document_Type, invoiceDate);
 
-    const invoice = new Invoice({
+    // Calculate Total_Amount
+    const totalAmount = validatedItems.reduce((sum, item) => sum + Number(item.Line_Total), 0);
+    if (isNaN(totalAmount)) {
+      throw new Error('Failed to calculate Total_Amount: Result is not a valid number.');
+    }
+    console.log('Calculated Total_Amount:', totalAmount);
+
+    // Create invoice with Total_Amount explicitly set
+    const invoiceData = {
       Document_Type,
       Document_ID: documentID,
       Customer_ID,
       Date: invoiceDate,
-      Items,
-    });
+      Items: validatedItems,
+      Total_Amount: totalAmount,
+    };
+    console.log('Invoice data before creation:', invoiceData);
 
-    console.log('Invoice before save:', invoice.toObject()); // Log invoice state before save
+    const invoice = new Invoice(invoiceData);
+    console.log('Invoice object before save:', invoice.toObject());
 
     await invoice.save({ session });
+
+    console.log('Invoice saved successfully:', invoice.toObject());
 
     await session.commitTransaction();
     res.status(201).json(invoice);
   } catch (error) {
     await session.abortTransaction();
-    console.error('Error creating invoice:', error); 
-    console.error('Request body:', req.body); // Log the incoming request body
+    console.error('Error creating invoice:', error);
+    console.error('Request body at error:', req.body);
     if (error.name === 'ValidationError') {
       const messages = Object.values(error.errors).map((err) => err.message).join(', ');
       res.status(400).json({ error: messages || 'Validation failed. Please check the form and try again.' });
@@ -1102,6 +1117,67 @@ app.get('/api/invoices/:id', async (req, res) => {
   } catch (error) {
     console.error('Error fetching invoice:', error);
     res.status(500).json({ error: 'An error occurred while fetching the invoice/quotation. Please try again later.' });
+  }
+});
+
+app.post('/api/invoices/print', async (req, res) => {
+  const { Document_Type, Customer_Name, Items, Total_Amount, Date } = req.body;
+
+  // Basic LaTeX invoice template
+  const latexContent = `
+    \\documentclass[a4paper]{article}
+    \\usepackage[utf8]{inputenc}
+    \\usepackage{geometry}
+    \\geometry{a4paper, margin=1in}
+    \\usepackage{longtable}
+    \\usepackage{booktabs}
+
+    \\begin{document}
+
+    \\section*{${Document_Type}}
+    \\textbf{Document Type:} ${Document_Type} \\
+    \\textbf{Customer Name:} ${Customer_Name} \\
+    \\textbf{Date:} ${Date} \\
+
+    \\begin{longtable}{|l|c|c|c|}
+    \\hline
+    \\textbf{Item Description} & \\textbf{Quantity} & \\textbf{Rate (LKR)} & \\textbf{Line Total (LKR)} \\\\
+    \\hline
+    ${Items.map(item => `${item.Item_Description} & ${item.Quantity} & ${item.Rate} & ${item.Line_Total} \\\\ \\hline`).join('')}
+    \\hline
+    \\textbf{Total Amount} & & & \\textbf{LKR ${Total_Amount}} \\\\
+    \\hline
+    \\end{longtable}
+
+    \\end{document}
+  `;
+
+  const fs = require('fs');
+  const { exec } = require('child_process');
+
+  try {
+    // Write LaTeX to a temporary file
+    fs.writeFileSync('invoice.tex', latexContent);
+
+    // Compile LaTeX to PDF
+    exec('latexmk -pdf invoice.tex', (error) => {
+      if (error) {
+        console.error('Error generating PDF:', error);
+        return res.status(500).json({ error: 'Failed to generate PDF' });
+      }
+
+      // Send the PDF
+      res.setHeader('Content-Type', 'application/pdf');
+      const pdfBuffer = fs.readFileSync('invoice.pdf');
+      res.send(pdfBuffer);
+
+      // Clean up temporary files
+      fs.unlinkSync('invoice.tex');
+      fs.unlinkSync('invoice.pdf');
+    });
+  } catch (error) {
+    console.error('Error in print endpoint:', error);
+    res.status(500).json({ error: 'Failed to generate invoice PDF' });
   }
 });
 

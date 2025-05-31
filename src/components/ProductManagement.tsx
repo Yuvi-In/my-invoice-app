@@ -89,7 +89,7 @@ const ProductManagement: React.FC = () => {
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get<Product[]>('http://192.168.1.5:5000/api/products');
+      const response = await axios.get<Product[]>('http://192.168.1.6:5000/api/products');
       setProducts(response.data);
     } catch (err) {
       console.error('Error fetching products:', err);
@@ -105,7 +105,7 @@ const ProductManagement: React.FC = () => {
       return false;
     }
     try {
-      const response = await axios.get<Product[]>('http://192.168.1.5:5000/api/products');
+      const response = await axios.get<Product[]>('http://192.168.1.6:5000/api/products');
       return !response.data.some((p) => p.Product_ID === productId && p._id !== editingProductId);
     } catch (err) {
       toast.error('Failed to check product ID availability');
@@ -116,7 +116,7 @@ const ProductManagement: React.FC = () => {
   const suggestUniqueCode = async () => {
     if (formData.Product_Category !== 'Shoe Laser Cutting') return;
     try {
-      const response = await axios.get<Product[]>('http://192.168.1.5:5000/api/products');
+      const response = await axios.get<Product[]>('http://192.168.1.6:5000/api/products');
       setProducts(response.data);
       const prefix = `${formData.Customer_Nickname}-${formData.Material_Type}-`;
       const existingCodes = response.data
@@ -251,11 +251,11 @@ const ProductManagement: React.FC = () => {
     };
     try {
       if (editingProductId) {
-        const response = await axios.put<Product>(`http://192.168.1.5:5000/api/products/${editingProductId}`, payload);
+        const response = await axios.put<Product>(`http://192.168.1.6:5000/api/products/${editingProductId}`, payload);
         setProducts(products.map((p) => (p._id === editingProductId ? response.data : p)));
         toast.success('Product updated successfully');
       } else {
-        const response = await axios.post<Product>('http://192.168.1.5:5000/api/products', payload);
+        const response = await axios.post<Product>('http://192.168.1.6:5000/api/products', payload);
         setProducts([...products, response.data]);
         toast.success('Product created successfully');
       }
@@ -293,7 +293,7 @@ const ProductManagement: React.FC = () => {
 
   const handleEdit = async (id: string) => {
     try {
-      const response = await axios.get<Product>(`http://192.168.1.5:5000/api/products/${id}`);
+      const response = await axios.get<Product>(`http://192.168.1.6:5000/api/products/${id}`);
       setFormData({
         Product_Category: response.data.Product_Category,
         Customer_Nickname: response.data.Customer_Nickname || '',
@@ -316,7 +316,7 @@ const ProductManagement: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     setIsLoading(true);
     try {
-      await axios.delete(`http://192.168.1.5:5000/api/products/${id}`);
+      await axios.delete(`http://192.168.1.6:5000/api/products/${id}`);
       setProducts(products.filter((p) => p._id !== id));
       toast.success('Product deleted successfully');
     } catch (err: any) {
