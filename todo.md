@@ -1,0 +1,2 @@
+- [shadcn](https://ui.shadcn.com/) for components
+- [origin](https://originui.com/) for pre desinged components
