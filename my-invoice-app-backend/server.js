@@ -45,7 +45,7 @@ const customerSchema = new mongoose.Schema({
     },
   },
   Address: { type: String },
-  Nickname: {type: String},
+  Nickname: { type: String },
   Tax_ID: {
     type: String,
     validate: {
@@ -1120,66 +1120,215 @@ app.get('/api/invoices/:id', async (req, res) => {
   }
 });
 
+
+
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const { isAbsolute } = require('path');
+
 app.post('/api/invoices/print', async (req, res) => {
-  const { Document_Type, Customer_Name, Items, Total_Amount, Date } = req.body;
+  const { Document_Type, Customer_Name, Address, Items, Total_Amount, InvoiceDate, Customer_Mobile } = req.body;
 
-  // Basic LaTeX invoice template
-  const latexContent = `
-    \\documentclass[a4paper]{article}
-    \\usepackage[utf8]{inputenc}
-    \\usepackage{geometry}
-    \\geometry{a4paper, margin=1in}
-    \\usepackage{longtable}
-    \\usepackage{booktabs}
-
-    \\begin{document}
-
-    \\section*{${Document_Type}}
-    \\textbf{Document Type:} ${Document_Type} \\
-    \\textbf{Customer Name:} ${Customer_Name} \\
-    \\textbf{Date:} ${Date} \\
-
-    \\begin{longtable}{|l|c|c|c|}
-    \\hline
-    \\textbf{Item Description} & \\textbf{Quantity} & \\textbf{Rate (LKR)} & \\textbf{Line Total (LKR)} \\\\
-    \\hline
-    ${Items.map(item => `${item.Item_Description} & ${item.Quantity} & ${item.Rate} & ${item.Line_Total} \\\\ \\hline`).join('')}
-    \\hline
-    \\textbf{Total Amount} & & & \\textbf{LKR ${Total_Amount}} \\\\
-    \\hline
-    \\end{longtable}
-
-    \\end{document}
-  `;
-
-  const fs = require('fs');
-  const { exec } = require('child_process');
+  // Fallback to current date if InvoiceDate is undefined or invalid
+  const currentDate = new Date('2025-06-02T17:04:00+0530'); // Current date and time: 05:04 PM +0530, June 02, 2025
+  const formattedCurrentDate = currentDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+  const effectiveInvoiceDate = InvoiceDate && typeof InvoiceDate === 'string' && InvoiceDate.includes('-')
+    ? InvoiceDate
+    : formattedCurrentDate;
 
   try {
-    // Write LaTeX to a temporary file
-    fs.writeFileSync('invoice.tex', latexContent);
-
-    // Compile LaTeX to PDF
-    exec('latexmk -pdf invoice.tex', (error) => {
-      if (error) {
-        console.error('Error generating PDF:', error);
-        return res.status(500).json({ error: 'Failed to generate PDF' });
-      }
-
-      // Send the PDF
+    // Create a new PDF document
+    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', () => {
+      const pdfData = Buffer.concat(buffers);
       res.setHeader('Content-Type', 'application/pdf');
-      const pdfBuffer = fs.readFileSync('invoice.pdf');
-      res.send(pdfBuffer);
-
-      // Clean up temporary files
-      fs.unlinkSync('invoice.tex');
-      fs.unlinkSync('invoice.pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="invoice_${invoiceNumber}.pdf"`);
+      res.send(pdfData);
     });
+
+    // Header: Logo and Company Details
+    doc.image('../src/assets/logo.png', {width: 65}); // Logo placeholder above company name
+    doc.moveDown(0.5);
+    doc.fontSize(16).font('Helvetica-Bold').text('Orgalaser Hologram Pvt. Ltd.', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font('Helvetica').text('325/Summer park, Batagama South, Kandana, 11320, Sri Lanka.', { align: 'center' });
+    doc.text('Tel: 0112236853 | Mob: 0719471408 / 0716520030', { align: 'center' });
+    doc.text('Email: orgalaser.hologram@gmail.com', { align: 'center' });
+    doc.moveDown(1.5);
+
+    // Invoice Title and Details
+    doc.fontSize(14).font('Helvetica-Bold').text(`${Document_Type}`, { align: 'center' });
+    doc.moveDown(0.5);
+
+    const invoiceNumber = `OLH${effectiveInvoiceDate.split('-').join('')}-${Math.floor(Math.random() * 100)}`;
+    const dueDate = new Date(effectiveInvoiceDate);
+    dueDate.setMonth(dueDate.getMonth() + 1);
+    const dueDateStr = dueDate.toISOString().split('T')[0];
+
+    doc.fontSize(10).font('Helvetica');
+    const detailsTop = doc.y;
+    // Left side
+    doc.text(`Invoice Number: ${invoiceNumber}`, 50, detailsTop);
+    doc.text(`Invoice Date: ${effectiveInvoiceDate}`, 50, detailsTop + 15);
+    doc.text(`Due Date: ${dueDateStr}`, 50, detailsTop + 30);
+    // Right side
+    doc.text(`Payment Term: 30 days`, 350, detailsTop);
+    doc.text(`Payment Method: Cheque`, 350, detailsTop + 15);
+    doc.text(`Salesperson: Mr. Yuvindu`, 350, detailsTop + 30);
+    doc.text(`Purchase Order: OH/HG/01/05/25`, 350, detailsTop + 45);
+    doc.moveDown(1);
+
+    // Billing Address and Customer Mobile
+    doc.fontSize(10).font('Helvetica-Bold').text('Billing Address', 50, doc.y);
+    doc.moveDown(0.2);
+    doc.font('Helvetica');
+    doc.text(`${Customer_Name || 'Unknown Customer'}`, 50, doc.y);
+    doc.text(`${Address || 'Unknown'}`, 50, doc.y + 15);
+    doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 350, doc.y - 15, { align: 'right' });
+    doc.moveDown(1.5);
+
+    // Items Table
+    const tableTop = doc.y;
+    const itemNumberX = 50;
+    const nameX = 80;
+    const quantityX = 200;
+    const unitPriceX = 280;
+    const discountX = 360;
+    const subtotalX = 440;
+    const totalX = 520;
+
+    // Table Headers with Background
+    doc.fontSize(10).font('Helvetica-Bold');
+    doc.text('#', itemNumberX, tableTop + 5);
+    doc.text('Name', nameX, tableTop + 5);
+    doc.text('Quantity', quantityX, tableTop + 5);
+    doc.text('Unit Price', unitPriceX, tableTop + 5);
+    doc.text('Discount', discountX, tableTop + 5);
+    doc.text('Subtotal', subtotalX, tableTop + 5);
+    doc.text('Total', totalX, tableTop + 5);
+    doc.rect(50, tableTop, 500, 20).stroke(); // Border
+    doc.moveDown(0.5);
+
+    // Table Rows
+    let position = doc.y + 5;
+    doc.font('Helvetica');
+    (Items || []).forEach((item, index) => {
+      const rowTop = position;
+      doc.text((index + 1).toString(), itemNumberX, rowTop);
+      doc.text(item.Item_Description || 'N/A', nameX, rowTop, { width: 120 });
+      doc.text((item.Quantity || 0).toString(), quantityX, rowTop, { width: 80 });
+      doc.text(`LKR ${(item.Rate || 0).toFixed(2)}`, unitPriceX, rowTop, { width: 80 });
+      doc.text('LKR 0.00', discountX, rowTop, { width: 80 });
+      doc.text(`LKR ${(item.Line_Total || 0).toFixed(2)}`, subtotalX, rowTop, { width: 80 });
+      doc.text(`LKR ${(item.Line_Total || 0).toFixed(2)}`, totalX, rowTop, { width: 80 });
+      position += 20;
+      doc.rect(50, rowTop - 5, 500, 20).stroke(); // Row border
+    });
+
+    // Draw table bottom border
+    doc.rect(50, position - 5, 470, 0).stroke();
+    doc.moveDown(1);
+
+    // Totals
+    const totalAmount = Total_Amount || 0;
+    const totalsTop = doc.y;
+    doc.font('Helvetica-Bold');
+    doc.text('Subtotal:', 400, totalsTop);
+    doc.text('Total:', 400, totalsTop + 15);
+    doc.text('Paid:', 400, totalsTop + 30);
+    doc.text('Balance Due:', 400, totalsTop + 45);
+    doc.text('Total Due:', 400, totalsTop + 60);
+
+    doc.font('Helvetica');
+    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop, { align: 'right' });
+    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop + 15, { align: 'right' });
+    doc.text('LKR 0.00', 500, totalsTop + 30, { align: 'right' });
+    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop + 45, { align: 'right' });
+    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop + 60, { align: 'right' });
+
+    //Notes
+    doc.moveDown(0.5);
+    doc.text('This is not a VAT invoice.', 50, doc.y);
+    doc.text('If you have any questions concerning this Invoice please be kind to inform us.', 50, doc.y + 15);
+    doc.text('Lead Time: Within 14-21 working days from the date of receiving the Purchasing Order or 50% Advance.', 50, doc.y + 30);
+    doc.moveDown(1);
+
+
+    // Bank Details
+    doc.moveDown(1);
+    doc.text('Bank Name: Commercial Bank of Ceylon PLC', 50, doc.y);
+    doc.text('Account Name: Orgalaser Hologram Pvt. Ltd.', 50, doc.y + 15);
+    doc.text('Account Number: 1000666319', 50, doc.y + 30);
+    doc.text('Bank Code: 031', 50, doc.y + 45);
+    doc.moveDown(1);
+
+    // Footer
+    doc.fontSize(8).font('Helvetica');
+    doc.text('This is a computer generated advice and does not require manual signature.', { align: 'center' });
+    doc.text('We look forward to the opportunity of being of service to you', { align: 'center' });
+    doc.text('Thank you for your business!', { align: 'center' });
+    doc.text('Page 1 of 1', { align: 'center' });
+
+    // Finalize the PDF
+    doc.end();
   } catch (error) {
     console.error('Error in print endpoint:', error);
     res.status(500).json({ error: 'Failed to generate invoice PDF' });
   }
 });
+
+// Helper function to convert number to words
+function convertToWords(amount) {
+  const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
+  const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+  function convertGroup(num) {
+    let words = '';
+    if (num >= 100) {
+      words += units[Math.floor(num / 100)] + ' Hundred ';
+      num %= 100;
+    }
+    if (num >= 10 && num < 20) {
+      words += teens[num - 10] + ' ';
+    } else {
+      if (num >= 20) {
+        words += tens[Math.floor(num / 10)] + ' ';
+        num %= 10;
+      }
+      if (num > 0) {
+        words += units[num] + ' ';
+      }
+    }
+    return words.trim();
+  }
+
+  const amountStr = amount.toFixed(2).split('.');
+  const rupees = parseInt(amountStr[0]);
+  const paise = parseInt(amountStr[1]);
+
+  let words = '';
+  if (rupees === 0) words = 'Zero';
+  else {
+    const chunks = [];
+    let num = rupees;
+    while (num > 0) {
+      chunks.unshift(num % 1000);
+      num = Math.floor(num / 1000);
+    }
+    const chunkWords = ['Thousand', 'Million', 'Billion'];
+    for (let i = 0; i < chunks.length; i++) {
+      if (chunks[i] > 0) {
+        words = convertGroup(chunks[i]) + (i > 0 ? ` ${chunkWords[i - 1]} ` : '') + words;
+      }
+    }
+  }
+  words = words.trim() + (paise > 0 ? ` and ${convertGroup(paise)} Cents` : '');
+  return words || 'Zero';
+}
+
 
 // Start server
 const PORT = process.env.PORT || 5000;
