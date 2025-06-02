@@ -26,6 +26,9 @@ const InvoiceManagement: React.FC = () => {
   // State for document type
   const [documentType, setDocumentType] = useState<string>('');
 
+  // State for invoice date
+  const [invoiceDate, setInvoiceDate] = useState<string>('');
+
   // State for items and total
   const [items, setItems] = useState<LineItem[]>([]);
   const [barcode, setBarcode] = useState<string>('');
@@ -39,7 +42,7 @@ const InvoiceManagement: React.FC = () => {
     }
 
     try {
-      const response = await axios.post('http://192.168.1.5:5000/api/customers/search', {
+      const response = await axios.post('http://192.168.1.6:5000/api/customers/search', {
         Customer_Type: customerType,
         Identifier: identifier,
       });
@@ -56,7 +59,7 @@ const InvoiceManagement: React.FC = () => {
       Swal.fire('Error', 'Please enter a barcode.', 'error');
       return;
     }
-    if (quantity < 1) {
+    if (quantity < 0) {
       Swal.fire('Error', 'Quantity must be at least 1.', 'error');
       return;
     }
@@ -88,7 +91,7 @@ const InvoiceManagement: React.FC = () => {
         body.Material_Cost = materialCost ? parseFloat(materialCost) : 0;
       }
 
-      const response = await axios.post('http://192.168.1.5:5000/api/invoices/scan', body);
+      const response = await axios.post('http://192.168.1.6:5000/api/invoices/scan', body);
       const newItem: LineItem = {
         Item_Description: response.data.Item_Description,
         Quantity: Number(response.data.Quantity),
@@ -102,6 +105,24 @@ const InvoiceManagement: React.FC = () => {
     } catch (error: any) {
       Swal.fire('Error', error.response?.data?.error || 'Failed to process barcode.', 'error');
     }
+  };
+
+  // Handle delete item
+  const handleDeleteItem = (index: number) => {
+    Swal.fire({
+      title: 'Are you sure?',
+      text: 'This item will be removed from the invoice.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Yes, delete it!'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        setItems(items.filter((_, i) => i !== index));
+        Swal.fire('Deleted', 'Item has been removed from the invoice.', 'success');
+      }
+    });
   };
 
   // Calculate final total
@@ -130,22 +151,68 @@ const InvoiceManagement: React.FC = () => {
         Line_Total: Number(item.Line_Total),
       }));
 
-      const response = await axios.post('http://192.168.1.5:5000/api/invoices', {
+      const response = await axios.post('http://192.168.1.6:5000/api/invoices', {
         Document_Type: documentType,
         Customer_ID: selectedCustomer._id,
         Items: formattedItems,
+        invoiceDateInput: invoiceDate || undefined,
       });
-      Swal.fire('Success', `${documentType} saved with ID: ${response.data.Document_ID}`, 'success');
+      Swal.fire('Success', `${documentType} saved with ID: ${response.data.Document_ID}!`, 'success');
       // Reset form
       setCustomerType('');
       setIdentifier('');
       setSelectedCustomer(null);
       setDocumentType('');
+      setInvoiceDate('');
       setItems([]);
       setBarcode('');
       setQuantity(1);
     } catch (error: any) {
       Swal.fire('Error', error.response?.data?.error || 'Failed to save invoice.', 'error');
+    }
+  };
+
+  // Handle print invoice
+  const handlePrintInvoice = async () => {
+    if (!selectedCustomer) {
+      Swal.fire('Error', 'Please select a customer before printing.', 'error');
+      return;
+    }
+    if (items.length === 0) {
+      Swal.fire('Error', 'Please add at least one item to print the invoice.', 'error');
+      return;
+    }
+
+    try {
+      const formattedItems = items.map(item => ({
+        Item_Description: item.Item_Description,
+        Quantity: Number(item.Quantity),
+        Rate: Number(item.Rate),
+        Line_Total: Number(item.Line_Total),
+      }));
+
+      const invoiceData = {
+        Document_Type: documentType || 'Invoice',
+        Customer_Name: selectedCustomer.Full_Name,
+        Items: formattedItems,
+        Total_Amount: finalTotal,
+        Date: invoiceDate || new Date().toISOString().split('T')[0],
+      };
+
+      const response = await axios.post('http://192.168.1.6:5000/api/invoices/print', invoiceData, {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `invoice_${invoiceData.Date}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      Swal.fire('Success', 'Invoice PDF downloaded!', 'success');
+    } catch (error: any) {
+      Swal.fire('Error', error.response?.data?.error || 'Failed to print invoice.', 'error');
     }
   };
 
@@ -206,6 +273,17 @@ const InvoiceManagement: React.FC = () => {
         </select>
       </div>
 
+      {/* Invoice Date */}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold mb-2">Invoice Date</h2>
+        <input
+          type="date"
+          value={invoiceDate}
+          onChange={(e) => setInvoiceDate(e.target.value)}
+          className="border p-2 rounded"
+        />
+      </div>
+
       {/* Barcode Scanning */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-2">Add Item via Barcode</h2>
@@ -247,6 +325,7 @@ const InvoiceManagement: React.FC = () => {
                 <th className="border p-2 text-left">Quantity</th>
                 <th className="border p-2 text-left">Rate (LKR)</th>
                 <th className="border p-2 text-left">Line Total (LKR)</th>
+                <th className="border p-2 text-left">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -256,10 +335,19 @@ const InvoiceManagement: React.FC = () => {
                   <td className="border p-2">{item.Quantity}</td>
                   <td className="border p-2">{item.Rate}</td>
                   <td className="border p-2">{item.Line_Total}</td>
+                  <td className="border p-2">
+                    <button
+                      onClick={() => handleDeleteItem(index)}
+                      className="text-red-600 hover:text-red-900"
+                      aria-label={`Delete item ${item.Item_Description}`}
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
               ))}
               <tr className="font-bold">
-                <td colSpan={3} className="border p-2 text-right">Final Total:</td>
+                <td colSpan={4} className="border p-2 text-right">Final Total:</td>
                 <td className="border p-2">LKR {finalTotal}</td>
               </tr>
             </tbody>
@@ -267,13 +355,21 @@ const InvoiceManagement: React.FC = () => {
         )}
       </div>
 
-      {/* Save Button */}
-      <button
-        onClick={handleSaveInvoice}
-        className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600"
-      >
-        Save {documentType || 'Document'}
-      </button>
+      {/* Save and Print Buttons */}
+      <div className="flex space-x-4">
+        <button
+          onClick={handleSaveInvoice}
+          className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600"
+        >
+          Save {documentType || 'Document'}
+        </button>
+        <button
+          onClick={handlePrintInvoice}
+          className="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600"
+        >
+          Print {documentType || 'Document'}
+        </button>
+      </div>
     </div>
   );
 };

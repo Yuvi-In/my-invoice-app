@@ -50,6 +50,7 @@ const CustomerManagement: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterCategory, setFilterCategory] = useState<string>('All'); // New state for category filter
 
   useEffect(() => {
     fetchCustomers();
@@ -58,7 +59,7 @@ const CustomerManagement: React.FC = () => {
   const fetchCustomers = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get<Customer[]>('http://192.168.1.5:5000/api/customers');
+      const response = await axios.get<Customer[]>('http://192.168.1.6:5000/api/customers');
       setCustomers(response.data);
     } catch (err) {
       toast.error('Failed to fetch customers');
@@ -111,7 +112,9 @@ const CustomerManagement: React.FC = () => {
     const searchLower = searchQuery.toLowerCase();
     const nickname = customer.Nickname?.toLowerCase() || '';
     const phone = customer.Instore_Phone_Number?.toLowerCase() || customer.Phone_Number?.toLowerCase() || '';
-    return nickname.includes(searchLower) || phone.includes(searchLower);
+    const matchesSearch = nickname.includes(searchLower) || phone.includes(searchLower);
+    const matchesCategory = filterCategory === 'All' || customer.Customer_Type === filterCategory;
+    return matchesSearch && matchesCategory;
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -135,11 +138,11 @@ const CustomerManagement: React.FC = () => {
     };
     try {
       if (editingCustomerId) {
-        const response = await axios.put<Customer>(`http://192.168.1.5:5000/api/customers/${editingCustomerId}`, payload);
+        const response = await axios.put<Customer>(`http://192.168.1.6:5000/api/customers/${editingCustomerId}`, payload);
         setCustomers(customers.map((c) => (c._id === editingCustomerId ? response.data : c)));
         toast.success('Customer updated successfully');
       } else {
-        const response = await axios.post<Customer>('http://192.168.1.5:5000/api/customers', payload);
+        const response = await axios.post<Customer>('http://192.168.1.6:5000/api/customers', payload);
         setCustomers([...customers, response.data]);
         toast.success('Customer created successfully');
       }
@@ -153,7 +156,7 @@ const CustomerManagement: React.FC = () => {
 
   const handleEdit = async (id: string) => {
     try {
-      const response = await axios.get<Customer>(`http://192.168.1.5:5000/api/customers/${id}`);
+      const response = await axios.get<Customer>(`http://192.168.1.6:5000/api/customers/${id}`);
       setFormData({
         Customer_Type: response.data.Customer_Type,
         Full_Name: response.data.Full_Name,
@@ -176,7 +179,7 @@ const CustomerManagement: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
     setIsLoading(true);
     try {
-      await axios.delete(`http://192.168.1.5:5000/api/customers/${id}`);
+      await axios.delete(`http://192.168.1.6:5000/api/customers/${id}`);
       setCustomers(customers.filter((c) => c._id !== id));
       toast.success('Customer deleted successfully');
     } catch (err: any) {
@@ -455,13 +458,24 @@ const CustomerManagement: React.FC = () => {
             className="w-full max-w-md p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             aria-label="Search customers"
           />
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value)}
+            className="p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            aria-label="Filter by customer category"
+          >
+            <option value="All">All Categories</option>
+            <option value="In-store">In-store</option>
+            <option value="Production">Production</option>
+            <option value="Wedding Invitation Maker">Wedding Invitation Maker</option>
+          </select>
           {searchQuery && (
             <button
               onClick={clearSearch}
               className="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
               aria-label="Clear search"
             >
-              Clear
+              Clear Search
             </button>
           )}
         </div>
@@ -509,36 +523,40 @@ const CustomerManagement: React.FC = () => {
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">{filteredCustomers.map((customer) => (<tr key={customer._id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Full_Name}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Customer_Type}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Job_Type}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Contact_Person || 'N/A'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Email || 'N/A'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {customer.Instore_Phone_Number || customer.Phone_Number || 'N/A'}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Address || 'N/A'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Tax_ID || 'N/A'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Nickname || 'N/A'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Status}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleEdit(customer._id)}
-                      className="text-blue-600 hover:text-blue-900 mr-4"
-                      aria-label={`Edit ${customer.Full_Name}`}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(customer._id)}
-                      className="text-red-600 hover:text-red-900"
-                      aria-label={`Delete ${customer.Full_Name}`}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>))}</tbody>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredCustomers.map((customer) => (
+                  <tr key={customer._id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Full_Name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Customer_Type}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Job_Type}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Contact_Person || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Email || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {customer.Instore_Phone_Number || customer.Phone_Number || 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Address || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Tax_ID || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Nickname || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.Status}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <button
+                        onClick={() => handleEdit(customer._id)}
+                        className="text-blue-600 hover:text-blue-900 mr-4"
+                        aria-label={`Edit ${customer.Full_Name}`}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(customer._id)}
+                        className="text-red-600 hover:text-red-900"
+                        aria-label={`Delete ${customer.Full_Name}`}
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           </div>
         )}
