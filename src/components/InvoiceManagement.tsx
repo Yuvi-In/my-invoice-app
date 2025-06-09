@@ -51,7 +51,7 @@ const InvoiceManagement: React.FC = () => {
 
     try {
       const response = await axios.post(
-        "http://192.168.1.6:5000/api/customers/search",
+        "http://192.168.1.8:5000/api/customers/search",
         {
           Customer_Type: customerType,
           Identifier: identifier,
@@ -111,7 +111,7 @@ const InvoiceManagement: React.FC = () => {
       }
 
       const response = await axios.post(
-        "http://192.168.1.6:5000/api/invoices/scan",
+        "http://192.168.1.8:5000/api/invoices/scan",
         body
       );
       const newItem: LineItem = {
@@ -190,7 +190,7 @@ const InvoiceManagement: React.FC = () => {
       }));
 
       const response = await axios.post(
-        "http://192.168.1.6:5000/api/invoices",
+        "http://192.168.1.8:5000/api/invoices",
         {
           Document_Type: documentType,
           Customer_ID: selectedCustomer._id,
@@ -255,7 +255,7 @@ const InvoiceManagement: React.FC = () => {
 
     console.log('Sending invoiceData:', invoiceData);
 
-    const response = await axios.post('http://192.168.1.6:5000/api/invoices/print', invoiceData, {
+    const response = await axios.post('http://192.168.1.8:5000/api/invoices/print', invoiceData, {
       responseType: 'blob',
     });
 

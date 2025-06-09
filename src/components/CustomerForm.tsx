@@ -23,7 +23,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customerId, onSave }) => {
   useEffect(() => {
     if (customerId) {
       // Fetch customer data for editing
-      fetch(`http://192.168.1.6:5000/api/customers/${customerId}`)
+      fetch(`http://192.168.1.8:5000/api/customers/${customerId}`)
         .then((response) => response.json())
         .then((data) => {
           if (data.error) {
@@ -46,7 +46,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customerId, onSave }) => {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
-    const url = customerId ? `http://192.168.1.6:5000/api/customers/${customerId}` : 'http://192.168.1.6:5000/api/customers';
+    const url = customerId ? `http://192.168.1.8:5000/api/customers/${customerId}` : 'http://192.168.1.8:5000/api/customers';
     const method = customerId ? 'PUT' : 'POST';
 
     fetch(url, {

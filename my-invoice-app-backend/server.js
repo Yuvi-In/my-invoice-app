@@ -176,7 +176,7 @@ const productSchema = new mongoose.Schema({
   Updated_At: { type: Date, default: Date.now },
 });
 
-// Invoice/Quotation Schema
+// Invoice/Quotation Schema with new fields
 const lineItemSchema = new mongoose.Schema({
   Item_Description: { type: String, required: [true, 'Item description is required'] },
   Quantity: {
@@ -223,6 +223,12 @@ const invoiceSchema = new mongoose.Schema({
     required: [true, 'Total amount is required'],
     min: [0, 'Total amount cannot be negative'],
   },
+  Purchasing_Order: { type: String }, // Optional Purchasing Order number
+  Payment_Term: { type: String }, // Dynamic based on Customer_Type
+  Payment_Method: { type: String, enum: ['Cash', 'Cheque', 'Online Transfer', 'Credit Card'] }, // Payment Method selection
+  Discount_Price: { type: Number, default: 0, min: [0, 'Discount cannot be negative'] }, // Discount Price
+  Advance_Payment: { type: Number, default: 0, min: [0, 'Advance payment cannot be negative'] }, // Advance Payment
+  Payment_Status: { type: String, enum: ['Unpaid', 'Paid', 'Partially Paid'], default: 'Unpaid' }, // Payment Status
   Created_At: { type: Date, default: Date.now },
   Updated_At: { type: Date, default: Date.now },
 });
@@ -297,7 +303,11 @@ productSchema.pre('findOneAndUpdate', async function (next) {
 });
 
 // Pre-save hook for Invoice to calculate Total_Amount
-
+invoiceSchema.pre('save', function (next) {
+  this.Total_Amount = this.Items.reduce((sum, item) => sum + Number(item.Line_Total), 0);
+  this.set({ Updated_At: new Date() });
+  next();
+});
 
 const Customer = mongoose.model('Customer', customerSchema);
 const ProductionCustomer = mongoose.model('ProductionCustomer', productionCustomerSchema);
@@ -1009,7 +1019,7 @@ app.post('/api/invoices', async (req, res) => {
   session.startTransaction();
   try {
     console.log('Incoming request body:', req.body); // Log raw request
-    const { Document_Type, Customer_ID, Items, invoiceDateInput } = req.body;
+    const { Document_Type, Customer_ID, Items, invoiceDateInput, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
 
     if (!Document_Type || !['Invoice', 'Quotation'].includes(Document_Type)) {
       throw new Error('Document type must be either Invoice or Quotation.');
@@ -1058,7 +1068,10 @@ app.post('/api/invoices', async (req, res) => {
     }
     console.log('Calculated Total_Amount:', totalAmount);
 
-    // Create invoice with Total_Amount explicitly set
+    // Determine Payment_Term based on Customer_Type
+    const paymentTerm = customer.Customer_Type === 'In-store' ? 'None' : '15 days';
+
+    // Create invoice with new fields
     const invoiceData = {
       Document_Type,
       Document_ID: documentID,
@@ -1066,6 +1079,11 @@ app.post('/api/invoices', async (req, res) => {
       Date: invoiceDate,
       Items: validatedItems,
       Total_Amount: totalAmount,
+      Purchasing_Order: Purchasing_Order || undefined, // Optional
+      Payment_Term: paymentTerm,
+      Payment_Method: Payment_Method || undefined, // Optional, from ['Cash', 'Cheque', 'Online Transfer', 'Credit Card']
+      Discount_Price: Number(Discount_Price) || 0,
+      Advance_Payment: Number(Advance_Payment) || 0,
     };
     console.log('Invoice data before creation:', invoiceData);
 
@@ -1120,87 +1138,101 @@ app.get('/api/invoices/:id', async (req, res) => {
   }
 });
 
-
-
+// Print Invoice Endpoint with updated features
 const PDFDocument = require('pdfkit');
 const fs = require('fs');
 const { isAbsolute } = require('path');
 
 app.post('/api/invoices/print', async (req, res) => {
-  const { Document_Type, Customer_Name, Address, Items, Total_Amount, InvoiceDate, Customer_Mobile } = req.body;
+  const { Document_Type, Customer_Name, Address, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
 
   // Fallback to current date if InvoiceDate is undefined or invalid
-  const currentDate = new Date('2025-06-02T17:04:00+0530'); // Current date and time: 05:04 PM +0530, June 02, 2025
+  const currentDate = new Date('2025-06-09T17:52:00+0530'); // 05:52 PM +0530, June 09, 2025
   const formattedCurrentDate = currentDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-  const effectiveInvoiceDate = InvoiceDate && typeof InvoiceDate === 'string' && InvoiceDate.includes('-')
-    ? InvoiceDate
-    : formattedCurrentDate;
+  const effectiveInvoiceDate = formattedCurrentDate;
 
   try {
-    // Create a new PDF document
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({ size: 'A5', margin: 15 });
     const buffers = [];
     doc.on('data', buffers.push.bind(buffers));
     doc.on('end', () => {
       const pdfData = Buffer.concat(buffers);
+      const invoiceNumber = `OLH${effectiveInvoiceDate.split('-').join('')}-${Math.floor(Math.random() * 100)}`;
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="invoice_${invoiceNumber}.pdf"`);
       res.send(pdfData);
     });
 
     // Header: Logo and Company Details
-    doc.image('../src/assets/logo.png', {width: 65}); // Logo placeholder above company name
+    const logoWidth = 40;
+    const pageWidth = doc.page.width;
+    const margin = doc.page.margins.left;
+    const logoX = (pageWidth - 2 * margin - logoWidth) / 2 + margin;
+    let logoLoaded = false;
+    try {
+      if (fs.existsSync('../src/assets/logo.png')) {
+        doc.image('../src/assets/logo.png', logoX, doc.y, { width: logoWidth });
+        logoLoaded = true;
+      }
+    } catch (error) {
+      console.error('Logo load error:', error);
+    }
+    if (!logoLoaded) {
+      doc.fontSize(10).text('Orgalaser Logo', { align: 'center', underline: true });
+    }
+    doc.moveDown(4);
+    doc.fontSize(12).font('Helvetica-Bold').text('Orgalasser Cutting Wedding Cards &', { align: 'center' });
+    doc.fontSize(10).font('Helvetica-Bold').text('Graphic Items Pvt. Ltd', { align: 'center' });
+    doc.fontSize(8).font('Helvetica-Bold').text('PV00204620', { align: 'center' });
     doc.moveDown(0.5);
-    doc.fontSize(16).font('Helvetica-Bold').text('Orgalaser Hologram Pvt. Ltd.', { align: 'center' });
-    doc.moveDown(0.5);
-    doc.fontSize(10).font('Helvetica').text('325/Summer park, Batagama South, Kandana, 11320, Sri Lanka.', { align: 'center' });
-    doc.text('Tel: 0112236853 | Mob: 0719471408 / 0716520030', { align: 'center' });
-    doc.text('Email: orgalaser.hologram@gmail.com', { align: 'center' });
-    doc.moveDown(1.5);
+    doc.fontSize(8).font('Helvetica').text('325/Summer park, Batagama South, Kandana, 11320, Sri Lanka.', { align: 'center' });
+    doc.text('Tel: 0112236311 | Mob: 0714421095 / 0716520030', { align: 'center' });
+    doc.text('Email: orgalaser@gmail.com', { align: 'center' });
+    doc.moveDown(1);
 
     // Invoice Title and Details
-    doc.fontSize(14).font('Helvetica-Bold').text(`${Document_Type}`, { align: 'center' });
+    doc.fontSize(12).font('Helvetica-Bold').text(`${Document_Type}`, { align: 'center' });
     doc.moveDown(0.5);
 
     const invoiceNumber = `OLH${effectiveInvoiceDate.split('-').join('')}-${Math.floor(Math.random() * 100)}`;
     const dueDate = new Date(effectiveInvoiceDate);
-    dueDate.setMonth(dueDate.getMonth() + 1);
+    dueDate.setDate(dueDate.getDate() + (Customer_Type === 'In-store' ? 0 : 15)); // 0 days for In-Store, 15 days for others
     const dueDateStr = dueDate.toISOString().split('T')[0];
 
-    doc.fontSize(10).font('Helvetica');
+    doc.fontSize(8).font('Helvetica');
     const detailsTop = doc.y;
-    // Left side
-    doc.text(`Invoice Number: ${invoiceNumber}`, 50, detailsTop);
-    doc.text(`Invoice Date: ${effectiveInvoiceDate}`, 50, detailsTop + 15);
-    doc.text(`Due Date: ${dueDateStr}`, 50, detailsTop + 30);
-    // Right side
-    doc.text(`Payment Term: 30 days`, 350, detailsTop);
-    doc.text(`Payment Method: Cheque`, 350, detailsTop + 15);
-    doc.text(`Salesperson: Mr. Yuvindu`, 350, detailsTop + 30);
-    doc.text(`Purchase Order: OH/HG/01/05/25`, 350, detailsTop + 45);
-    doc.moveDown(1);
+    doc.text(`Invoice Number: ${invoiceNumber}`, 20, detailsTop);
+    doc.text(`Invoice Date: ${effectiveInvoiceDate}`, 20, detailsTop + 12);
+    doc.text(`Due Date: ${dueDateStr}`, 20, detailsTop + 24);
+    if (Purchasing_Order) {
+      doc.text(`Purchasing Order: ${Purchasing_Order}`, 20, detailsTop + 36);
+    }
+    doc.text(`Payment Term: ${Customer_Type === 'In-store' ? 'None' : '15 days'}`, 200, detailsTop);
+    doc.text(`Payment Method: ${Payment_Method || 'Not Specified'}`, 200, detailsTop + 12);
+    doc.text(`Salesperson: Mr. Yuvindu`, 200, detailsTop + 24);
+    doc.text(`Purchase Order: OH/HG/01/05/25`, 200, detailsTop + 36);
+    doc.moveDown(0.5);
 
     // Billing Address and Customer Mobile
-    doc.fontSize(10).font('Helvetica-Bold').text('Billing Address', 50, doc.y);
+    doc.fontSize(8).font('Helvetica-Bold').text('Billing Address', 20, doc.y);
     doc.moveDown(0.2);
     doc.font('Helvetica');
-    doc.text(`${Customer_Name || 'Unknown Customer'}`, 50, doc.y);
-    doc.text(`${Address || 'Unknown'}`, 50, doc.y + 15);
-    doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 350, doc.y - 15, { align: 'right' });
-    doc.moveDown(1.5);
+    doc.text(`${Customer_Name || 'Unknown Customer'}`, 20, doc.y);
+    doc.text(`${Address || 'Unknown'}`, 20, doc.y + 5);
+    doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 180, doc.y - 5, { align: 'right' });
+    doc.moveDown(1);
 
     // Items Table
     const tableTop = doc.y;
-    const itemNumberX = 50;
-    const nameX = 80;
-    const quantityX = 200;
-    const unitPriceX = 280;
-    const discountX = 360;
-    const subtotalX = 440;
-    const totalX = 520;
+    const itemNumberX = 20;
+    const nameX = 40;
+    const quantityX = 100;
+    const unitPriceX = 130;
+    const discountX = 160;
+    const subtotalX = 190;
+    const totalX = 220;
 
-    // Table Headers with Background
-    doc.fontSize(10).font('Helvetica-Bold');
+    doc.fontSize(8).font('Helvetica-Bold');
     doc.text('#', itemNumberX, tableTop + 5);
     doc.text('Name', nameX, tableTop + 5);
     doc.text('Quantity', quantityX, tableTop + 5);
@@ -1208,74 +1240,113 @@ app.post('/api/invoices/print', async (req, res) => {
     doc.text('Discount', discountX, tableTop + 5);
     doc.text('Subtotal', subtotalX, tableTop + 5);
     doc.text('Total', totalX, tableTop + 5);
-    doc.rect(50, tableTop, 500, 20).stroke(); // Border
+    doc.rect(20, tableTop, 230, 20).stroke();
     doc.moveDown(0.5);
 
-    // Table Rows
     let position = doc.y + 5;
-    doc.font('Helvetica');
+    doc.fontSize(7).font('Helvetica');
+    const discountTotal = Number(Discount_Price) || 0;
+    const advanceTotal = Number(Advance_Payment) || 0;
     (Items || []).forEach((item, index) => {
       const rowTop = position;
+      const itemDiscount = (item.Rate || 0) * (item.Quantity || 0) * (discountTotal / 100);
+      const subtotal = (item.Quantity || 0) * (item.Rate || 0) - itemDiscount;
       doc.text((index + 1).toString(), itemNumberX, rowTop);
-      doc.text(item.Item_Description || 'N/A', nameX, rowTop, { width: 120 });
-      doc.text((item.Quantity || 0).toString(), quantityX, rowTop, { width: 80 });
-      doc.text(`LKR ${(item.Rate || 0).toFixed(2)}`, unitPriceX, rowTop, { width: 80 });
-      doc.text('LKR 0.00', discountX, rowTop, { width: 80 });
-      doc.text(`LKR ${(item.Line_Total || 0).toFixed(2)}`, subtotalX, rowTop, { width: 80 });
-      doc.text(`LKR ${(item.Line_Total || 0).toFixed(2)}`, totalX, rowTop, { width: 80 });
-      position += 20;
-      doc.rect(50, rowTop - 5, 500, 20).stroke(); // Row border
+      doc.text(item.Item_Description || 'N/A', nameX, rowTop, { width: 60 });
+      doc.text((item.Quantity || 0).toString(), quantityX, rowTop, { width: 30, align: 'center' });
+      doc.text(`LKR ${(item.Rate || 0).toFixed(2)}`, unitPriceX, rowTop, { width: 30 });
+      doc.text(`LKR ${itemDiscount.toFixed(2)}`, discountX, rowTop, { width: 30 });
+      doc.text(`LKR ${subtotal.toFixed(2)}`, subtotalX, rowTop, { width: 30 });
+      doc.text(`LKR ${subtotal.toFixed(2)}`, totalX, rowTop, { width: 30 });
+      position += 30;
     });
+    doc.rect(20, position - 5, 230, 0).stroke();
+    doc.moveDown(4);
 
-    // Draw table bottom border
-    doc.rect(50, position - 5, 470, 0).stroke();
-    doc.moveDown(1);
+    // Amount in Words
+    const netTotal = (Number(Total_Amount) || 0) - discountTotal - advanceTotal;
+    doc.text(`Amount in Words: ${convertToWords(netTotal)} Sri Lankan Rupees only`, 20, doc.y);
+    doc.moveDown(1.5);
 
     // Totals
-    const totalAmount = Total_Amount || 0;
     const totalsTop = doc.y;
     doc.font('Helvetica-Bold');
-    doc.text('Subtotal:', 400, totalsTop);
-    doc.text('Total:', 400, totalsTop + 15);
-    doc.text('Paid:', 400, totalsTop + 30);
-    doc.text('Balance Due:', 400, totalsTop + 45);
-    doc.text('Total Due:', 400, totalsTop + 60);
+    doc.text('Subtotal:', 180, totalsTop);
+    doc.text('Discount:', 180, totalsTop + 12);
+    doc.text('Advance:', 180, totalsTop + 24);
+    doc.text('Total:', 180, totalsTop + 36);
+    doc.text('Paid:', 180, totalsTop + 48);
+    doc.text('Balance Due:', 180, totalsTop + 60);
 
     doc.font('Helvetica');
-    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop, { align: 'right' });
-    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop + 15, { align: 'right' });
-    doc.text('LKR 0.00', 500, totalsTop + 30, { align: 'right' });
-    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop + 45, { align: 'right' });
-    doc.text(`LKR ${totalAmount.toFixed(2)}`, 500, totalsTop + 60, { align: 'right' });
+    doc.text(`LKR ${(Number(Total_Amount) || 0).toFixed(2)}`, 230, totalsTop, { align: 'right' });
+    doc.text(`LKR ${discountTotal.toFixed(2)}`, 230, totalsTop + 12, { align: 'right' });
+    doc.text(`LKR ${advanceTotal.toFixed(2)}`, 230, totalsTop + 24, { align: 'right' });
+    doc.text(`LKR ${netTotal.toFixed(2)}`, 230, totalsTop + 36, { align: 'right' });
+    doc.text('LKR 0.00', 230, totalsTop + 48, { align: 'right' });
+    doc.text(`LKR ${netTotal.toFixed(2)}`, 230, totalsTop + 60, { align: 'right' });
+    doc.save();
+    doc.opacity(0.3);
+    doc.rect(180, totalsTop + 54, 80, 0).stroke();
+    doc.opacity(1);
+    doc.restore();
 
-    //Notes
-    doc.moveDown(0.5);
-    doc.text('This is not a VAT invoice.', 50, doc.y);
-    doc.text('If you have any questions concerning this Invoice please be kind to inform us.', 50, doc.y + 15);
-    doc.text('Lead Time: Within 14-21 working days from the date of receiving the Purchasing Order or 50% Advance.', 50, doc.y + 30);
-    doc.moveDown(1);
-
+    // Notes
+    doc.fontSize(6).font('Helvetica-Oblique');
+    doc.text('This is not a VAT invoice.', 20, doc.y - 15);
+    doc.text('If you have any questions concerning this Invoice please be kind to inform us.', 20, doc.y + 5);
+    doc.fillColor('red').text('Lead Time: Within 14-21 working days from the date of receiving the Purchasing Order or 50% Advance.', 20, doc.y + 5).fillColor('black');
+    doc.moveDown(1.5);
 
     // Bank Details
-    doc.moveDown(1);
-    doc.text('Bank Name: Commercial Bank of Ceylon PLC', 50, doc.y);
-    doc.text('Account Name: Orgalaser Hologram Pvt. Ltd.', 50, doc.y + 15);
-    doc.text('Account Number: 1000666319', 50, doc.y + 30);
-    doc.text('Bank Code: 031', 50, doc.y + 45);
-    doc.moveDown(1);
+    doc.fontSize(7).font('Helvetica');
+    doc.text('Bank Name: Commercial Bank of Ceylon PLC', 20, doc.y);
+    doc.text('Account Name: Orgalaser Hologram Pvt. Ltd.', 20, doc.y + 5);
+    doc.text('Account Number: 1000666319', 20, doc.y + 5);
+    doc.text('Bank Code: 031', 20, doc.y + 5);
+    doc.moveDown(1.5);
 
     // Footer
-    doc.fontSize(8).font('Helvetica');
+    doc.fontSize(6).font('Helvetica');
     doc.text('This is a computer generated advice and does not require manual signature.', { align: 'center' });
     doc.text('We look forward to the opportunity of being of service to you', { align: 'center' });
     doc.text('Thank you for your business!', { align: 'center' });
     doc.text('Page 1 of 1', { align: 'center' });
 
-    // Finalize the PDF
     doc.end();
   } catch (error) {
     console.error('Error in print endpoint:', error);
     res.status(500).json({ error: 'Failed to generate invoice PDF' });
+  }
+});
+
+// Search invoices by customer nickname or phone number
+app.get('/api/invoices/search', async (req, res) => {
+  const { nickname, phone } = req.query;
+  try {
+    const query = {};
+    if (nickname) query['Customer_ID.Nickname'] = new RegExp(nickname, 'i');
+    if (phone) query['Customer_ID.Phone_Number'] = new RegExp(phone, 'i');
+    const invoices = await Invoice.find(query).populate('Customer_ID');
+    res.json(invoices);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to search invoices' });
+  }
+});
+
+// Update payment status or advance payment
+app.put('/api/invoices/:id', async (req, res) => {
+  const { id } = req.params;
+  const { Payment_Status, Advance_Payment } = req.body;
+  try {
+    const update = {};
+    if (Payment_Status) update.Payment_Status = Payment_Status;
+    if (Advance_Payment !== undefined) update.Advance_Payment = Number(Advance_Payment);
+    const invoice = await Invoice.findByIdAndUpdate(id, { $set: update }, { new: true });
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+    res.json(invoice);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update invoice' });
   }
 });
 
@@ -1328,7 +1399,6 @@ function convertToWords(amount) {
   words = words.trim() + (paise > 0 ? ` and ${convertGroup(paise)} Cents` : '');
   return words || 'Zero';
 }
-
 
 // Start server
 const PORT = process.env.PORT || 5000;
