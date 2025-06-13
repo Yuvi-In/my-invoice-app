@@ -31,7 +31,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onEdit }) => {
     const fetchCustomers = async () => {
       setIsLoading(true);
       try {
-        const response = await axios.get<Customer[]>('http://192.168.1.6:5000/api/customers');
+        const response = await axios.get<Customer[]>('http://192.168.1.3:5000/api/customers');
         setCustomers(response.data);
       } catch (err) {
         toast.error('Failed to fetch customers');
@@ -46,7 +46,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onEdit }) => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
     setIsLoading(true);
     try {
-      await axios.delete(`http://192.168.1.6:5000/api/customers/${id}`);
+      await axios.delete(`http://192.168.1.3:5000/api/customers/${id}`);
       setCustomers(customers.filter((customer) => customer._id !== id));
       toast.success('Customer deleted successfully');
     } catch (err: any) {
