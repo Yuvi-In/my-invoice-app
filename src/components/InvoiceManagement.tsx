@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 
@@ -10,6 +10,7 @@ interface Customer {
   Phone_Number?: string;
   Nickname?: string;
   Instore_Phone_Number?: string;
+  TAX_ID?: number;
 }
 
 interface LineItem {
@@ -19,24 +20,38 @@ interface LineItem {
   Line_Total: number;
 }
 
+interface Invoice {
+  _id: string;
+  Document_ID: string;
+  Customer_ID: Customer;
+  Total_Amount: number;
+  Payment_Status?: string;
+  Advance_Payment?: number;
+}
+
 const InvoiceManagement: React.FC = () => {
   // State for customer selection
   const [customerType, setCustomerType] = useState<string>("");
   const [identifier, setIdentifier] = useState<string>("");
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(
-    null
-  );
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
-  // State for document type
+  // State for invoice details
   const [documentType, setDocumentType] = useState<string>("");
-
-  // State for invoice date
   const [invoiceDate, setInvoiceDate] = useState<string>("");
+  const [purchasingOrder, setPurchasingOrder] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
+  const [discountPrice, setDiscountPrice] = useState<number>(0);
+  const [advancePayment, setAdvancePayment] = useState<number>(0);
 
   // State for items and total
   const [items, setItems] = useState<LineItem[]>([]);
   const [barcode, setBarcode] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
+
+  // State for search and update
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
 
   // Handle customer search
   const handleSearchCustomer = async () => {
@@ -51,7 +66,7 @@ const InvoiceManagement: React.FC = () => {
 
     try {
       const response = await axios.post(
-        "http://192.168.1.8:5000/api/customers/search",
+        "http://192.168.1.3:5000/api/customers/search",
         {
           Customer_Type: customerType,
           Identifier: identifier,
@@ -78,7 +93,7 @@ const InvoiceManagement: React.FC = () => {
       Swal.fire("Error", "Please enter a barcode.", "error");
       return;
     }
-    if (quantity < 0) {
+    if (quantity < 1) {
       Swal.fire("Error", "Quantity must be at least 1.", "error");
       return;
     }
@@ -111,7 +126,7 @@ const InvoiceManagement: React.FC = () => {
       }
 
       const response = await axios.post(
-        "http://192.168.1.8:5000/api/invoices/scan",
+        "http://192.168.1.3:5000/api/invoices/scan",
         body
       );
       const newItem: LineItem = {
@@ -155,8 +170,9 @@ const InvoiceManagement: React.FC = () => {
     });
   };
 
-  // Calculate final total
+  // Calculate final total with discount
   const finalTotal = items.reduce((sum, item) => sum + item.Line_Total, 0);
+  const netTotal = finalTotal - (finalTotal * (discountPrice / 100)) - advancePayment;
 
   // Handle save invoice
   const handleSaveInvoice = async () => {
@@ -190,12 +206,16 @@ const InvoiceManagement: React.FC = () => {
       }));
 
       const response = await axios.post(
-        "http://192.168.1.8:5000/api/invoices",
+        "http://192.168.1.3:5000/api/invoices",
         {
           Document_Type: documentType,
           Customer_ID: selectedCustomer._id,
           Items: formattedItems,
           invoiceDateInput: invoiceDate || undefined,
+          Purchasing_Order: purchasingOrder || undefined,
+          Payment_Method: paymentMethod,
+          Discount_Price: discountPrice,
+          Advance_Payment: advancePayment,
         }
       );
       Swal.fire(
@@ -209,6 +229,10 @@ const InvoiceManagement: React.FC = () => {
       setSelectedCustomer(null);
       setDocumentType("");
       setInvoiceDate("");
+      setPurchasingOrder("");
+      setPaymentMethod("Cash");
+      setDiscountPrice(0);
+      setAdvancePayment(0);
       setItems([]);
       setBarcode("");
       setQuantity(1);
@@ -223,56 +247,109 @@ const InvoiceManagement: React.FC = () => {
 
   // Handle print invoice
   const handlePrintInvoice = async () => {
-  if (!selectedCustomer) {
-    Swal.fire('Error', 'Please select a customer before printing.', 'error');
-    return;
-  }
-  if (items.length === 0) {
-    Swal.fire('Error', 'Please add at least one item to print the invoice.', 'error');
-    return;
-  }
+    if (!selectedCustomer) {
+      Swal.fire("Error", "Please select a customer before printing.", "error");
+      return;
+    }
+    if (items.length === 0) {
+      Swal.fire("Error", "Please add at least one item to print the invoice.", "error");
+      return;
+    }
 
-  try {
-    const formattedItems = items.map(item => ({
-      Item_Description: item.Item_Description,
-      Quantity: Number(item.Quantity),
-      Rate: Number(item.Rate),
-      Line_Total: Number(item.Line_Total),
-    }));
+    try {
+      const formattedItems = items.map((item) => ({
+        Item_Description: item.Item_Description,
+        Quantity: Number(item.Quantity),
+        Rate: Number(item.Rate),
+        Line_Total: Number(item.Line_Total),
+      }));
 
-    const currentDate = new Date('2025-06-02T17:04:00+0530'); // Current date and time
-    const effectiveInvoiceDate = invoiceDate || currentDate.toISOString().split('T')[0];
+      const currentDate = new Date("2025-06-12T16:46:00+0530"); // 04:46 PM +0530, June 12, 2025
+      const effectiveInvoiceDate = invoiceDate || currentDate.toISOString().split("T")[0];
 
-    const invoiceData = {
-      Document_Type: documentType || 'Invoice',
-      Customer_Name: selectedCustomer.Full_Name,
-      Address: selectedCustomer.Address || 'N/A',
-      Items: formattedItems,
-      Total_Amount: finalTotal,
-      InvoiceDate: effectiveInvoiceDate,
-      Customer_Mobile: selectedCustomer.Instore_Phone_Number || selectedCustomer.Phone_Number || 'N/A',
+      const invoiceData = {
+        Document_Type: documentType || "Invoice",
+        Customer_Name: selectedCustomer.Full_Name,
+        Address: selectedCustomer.Address || "N/A",
+        TAX_ID: selectedCustomer.TAX_ID || "N/A",
+        Items: formattedItems,
+        Total_Amount: finalTotal,
+        InvoiceDate: effectiveInvoiceDate,
+        Customer_Mobile: selectedCustomer.Instore_Phone_Number || selectedCustomer.Phone_Number || "N/A",
+        Customer_Type: selectedCustomer.Customer_Type,
+        Purchasing_Order: purchasingOrder || undefined,
+        Payment_Method: paymentMethod,
+        Discount_Price: discountPrice,
+        Advance_Payment: advancePayment,
+      };
+
+      console.log("Sending invoiceData:", invoiceData);
+
+      const response = await axios.post("http://192.168.1.3:5000/api/invoices/print", invoiceData, {
+        responseType: "blob",
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `invoice_${effectiveInvoiceDate}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      Swal.fire("Success", "Invoice PDF downloaded!", "success");
+    } catch (error: any) {
+      Swal.fire("Error", error.response?.data?.error || "Failed to print invoice.", "error");
+      console.error("Print error:", error);
+    }
+  };
+
+  // Handle invoice search
+  const handleSearchInvoice = async () => {
+    try {
+      const response = await axios.get("http://192.168.1.3:5000/api/invoices/search", {
+        params: { nickname: searchTerm, phone: searchTerm },
+      });
+      setInvoices(response.data);
+      Swal.fire("Success", "Invoices found!", "success");
+    } catch (error: any) {
+      Swal.fire("Error", error.response?.data?.error || "Failed to search invoices.", "error");
+    }
+  };
+
+  // Handle update invoice
+  const handleUpdateInvoice = async () => {
+    if (!selectedInvoice) {
+      Swal.fire("Error", "Please select an invoice to update.", "error");
+      return;
+    }
+
+    try {
+      await axios.put(`http://192.168.1.3:5000/api/invoices/${selectedInvoice._id}`, {
+        Payment_Status: selectedInvoice.Payment_Status || "Unpaid",
+        Advance_Payment: selectedInvoice.Advance_Payment || 0,
+      });
+      Swal.fire("Success", "Invoice updated successfully!", "success");
+      // Refresh invoices
+      const response = await axios.get("http://192.168.1.3:5000/api/invoices");
+      setInvoices(response.data);
+      setSelectedInvoice(null);
+    } catch (error: any) {
+      Swal.fire("Error", error.response?.data?.error || "Failed to update invoice.", "error");
+    }
+  };
+
+  // Fetch invoices on mount
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      try {
+        const response = await axios.get("http://192.168.1.3:5000/api/invoices");
+        setInvoices(response.data);
+      } catch (error: any) {
+        Swal.fire("Error", "Failed to load invoices.", "error");
+      }
     };
-
-    console.log('Sending invoiceData:', invoiceData);
-
-    const response = await axios.post('http://192.168.1.8:5000/api/invoices/print', invoiceData, {
-      responseType: 'blob',
-    });
-
-    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `invoice_${invoiceData.InvoiceDate}.pdf`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    Swal.fire('Success', 'Invoice PDF downloaded!', 'success');
-  } catch (error: any) {
-    Swal.fire('Error', error.response?.data?.error || 'Failed to print invoice.', 'error');
-    console.error('Print error:', error);
-  }
-};
-
+    fetchInvoices();
+  }, []);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -290,17 +367,12 @@ const InvoiceManagement: React.FC = () => {
             <option value="">Select Customer Type</option>
             <option value="In-store">In-store</option>
             <option value="Production">Production</option>
-            <option value="Wedding Invitation Maker">
-              Wedding Invitation Maker
-            </option>
+            <option value="Wedding Invitation Maker">Wedding Invitation Maker</option>
           </select>
-
           <input
             type="text"
             placeholder={
-              customerType === "In-store"
-                ? "Enter Phone Number"
-                : "Enter Nickname"
+              customerType === "In-store" ? "Enter Phone Number" : "Enter Nickname"
             }
             value={identifier}
             onChange={(e) => setIdentifier(e.target.value)}
@@ -331,33 +403,75 @@ const InvoiceManagement: React.FC = () => {
                 <strong>Nickname:</strong> {selectedCustomer.Nickname}
               </p>
             )}
+            {selectedCustomer.Address && (
+              <p>
+                <strong>Address:</strong> {selectedCustomer.Address}
+              </p>
+            )}
+            {selectedCustomer.TAX_ID && (
+              <p>
+                <strong>TAX ID:</strong> {selectedCustomer.TAX_ID}
+              </p>
+            )}
           </div>
         )}
       </div>
 
-      {/* Document Type Selection */}
+      {/* Invoice Details */}
       <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Select Document Type</h2>
-        <select
-          value={documentType}
-          onChange={(e) => setDocumentType(e.target.value)}
-          className="border p-2 rounded"
-        >
-          <option value="">Select Document Type</option>
-          <option value="Invoice">Invoice</option>
-          <option value="Quotation">Quotation</option>
-        </select>
-      </div>
-
-      {/* Invoice Date */}
-      <div className="mb-6">
-        <h2 className="text-xl font-semibold mb-2">Invoice Date</h2>
-        <input
-          type="date"
-          value={invoiceDate}
-          onChange={(e) => setInvoiceDate(e.target.value)}
-          className="border p-2 rounded"
-        />
+        <h2 className="text-xl font-semibold mb-2">Invoice Details</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <select
+            value={documentType}
+            onChange={(e) => setDocumentType(e.target.value)}
+            className="border p-2 rounded"
+          >
+            <option value="">Select Document Type</option>
+            <option value="Invoice">Invoice</option>
+            <option value="Quotation">Quotation</option>
+          </select>
+          <input
+            type="date"
+            value={invoiceDate}
+            onChange={(e) => setInvoiceDate(e.target.value)}
+            className="border p-2 rounded"
+          />
+          <input
+            type="text"
+            placeholder="Purchasing Order (Optional)"
+            value={purchasingOrder}
+            onChange={(e) => setPurchasingOrder(e.target.value)}
+            className="border p-2 rounded"
+          />
+          <select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            className="border p-2 rounded"
+          >
+            <option value="Cash">Cash</option>
+            <option value="Cheque">Cheque</option>
+            <option value="Online Transfer">Online Transfer</option>
+            <option value="Credit Card">Credit Card</option>
+          </select>
+          <h2 className="text-xl font-semibold mb-2">Discount Price (%)</h2>
+          <input
+            type="number"
+            placeholder="Discount Price (%)"
+            value={discountPrice}
+            onChange={(e) => setDiscountPrice(Number(e.target.value) || 0)}
+            min="0"
+            className="border p-2 rounded"
+          />
+          <h2 className="text-xl font-semibold mb-2">Advance Payment</h2>
+          <input
+            type="number"
+            placeholder="Advance Payment (LKR)"
+            value={advancePayment}
+            onChange={(e) => setAdvancePayment(Number(e.target.value) || 0)}
+            min="0"
+            className="border p-2 rounded"
+          />
+        </div>
       </div>
 
       {/* Barcode Scanning */}
@@ -423,10 +537,32 @@ const InvoiceManagement: React.FC = () => {
                 </tr>
               ))}
               <tr className="font-bold">
-                <td colSpan={4} className="border p-2 text-right">
+                <td colSpan={3} className="border p-2 text-right">
                   Final Total:
                 </td>
-                <td className="border p-2">LKR {finalTotal}</td>
+                <td className="border p-2">LKR {finalTotal.toFixed(2)}</td>
+                <td></td>
+              </tr>
+              <tr className="font-bold">
+                <td colSpan={3} className="border p-2 text-right">
+                  Discount ({discountPrice}%):
+                </td>
+                <td className="border p-2">LKR {(finalTotal * (discountPrice / 100)).toFixed(2)}</td>
+                <td></td>
+              </tr>
+              <tr className="font-bold">
+                <td colSpan={3} className="border p-2 text-right">
+                  Advance Payment:
+                </td>
+                <td className="border p-2">LKR {advancePayment.toFixed(2)}</td>
+                <td></td>
+              </tr>
+              <tr className="font-bold">
+                <td colSpan={3} className="border p-2 text-right">
+                  Net Total:
+                </td>
+                <td className="border p-2">LKR {netTotal.toFixed(2)}</td>
+                <td></td>
               </tr>
             </tbody>
           </table>
@@ -434,7 +570,7 @@ const InvoiceManagement: React.FC = () => {
       </div>
 
       {/* Save and Print Buttons */}
-      <div className="flex space-x-4">
+      <div className="flex space-x-4 mb-6">
         <button
           onClick={handleSaveInvoice}
           className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600"
@@ -448,6 +584,82 @@ const InvoiceManagement: React.FC = () => {
           Print {documentType || "Document"}
         </button>
       </div>
+
+      {/* Invoice Search */}
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold mb-2">Search Invoices</h2>
+        <div className="flex space-x-4 mb-4">
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Enter Nickname or Phone"
+            className="border p-2 rounded flex-1"
+          />
+          <button
+            onClick={handleSearchInvoice}
+            className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+          >
+            Search
+          </button>
+        </div>
+        {invoices.length > 0 && (
+          <ul className="space-y-2">
+            {invoices.map((invoice) => (
+              <li
+                key={invoice._id}
+                className="p-2 border border-gray-200 rounded-md cursor-pointer"
+                onClick={() => setSelectedInvoice(invoice)}
+                style={{ backgroundColor: selectedInvoice?._id === invoice._id ? "#e0f7fa" : "white" }}
+              >
+                {invoice.Document_ID} - {invoice.Customer_ID.Full_Name} (Total: {invoice.Total_Amount} LKR)
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Invoice Update */}
+      {selectedInvoice && (
+        <div className="mb-6">
+          <h2 className="text-xl font-semibold mb-2">Update Invoice</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <select
+              value={selectedInvoice.Payment_Status || "Unpaid"}
+              onChange={(e) =>
+                setSelectedInvoice((prev) => (prev ? { ...prev, Payment_Status: e.target.value } : prev))
+              }
+              className="border p-2 rounded"
+            >
+              <option value="Unpaid">Unpaid</option>
+              <option value="Paid">Paid</option>
+              <option value="Partially Paid">Partially Paid</option>
+            </select>
+            <input
+              type="number"
+              placeholder="Advance Payment (LKR)"
+              value={selectedInvoice.Advance_Payment || 0}
+              onChange={(e) =>
+                setSelectedInvoice((prev) => (prev ? { ...prev, Advance_Payment: Number(e.target.value) || 0 } : prev))
+              }
+              min="0"
+              className="border p-2 rounded"
+            />
+          </div>
+          <button
+            onClick={handleUpdateInvoice}
+            className="mt-4 bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600"
+          >
+            Update Invoice
+          </button>
+          <button
+            onClick={() => setSelectedInvoice(null)}
+            className="ml-4 mt-4 bg-red-500 text-white px-6 py-2 rounded hover:bg-red-600"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 };

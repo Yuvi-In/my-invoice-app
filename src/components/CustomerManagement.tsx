@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
+
 interface Customer {
   _id: string;
   Customer_Type: 'Production' | 'In-store' | 'Wedding Invitation Maker';
@@ -59,7 +60,7 @@ const CustomerManagement: React.FC = () => {
   const fetchCustomers = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get<Customer[]>('http://192.168.1.8:5000/api/customers');
+      const response = await axios.get<Customer[]>('http://192.168.1.3:5000/api/customers');
       setCustomers(response.data);
     } catch (err) {
       toast.error('Failed to fetch customers');
@@ -138,11 +139,11 @@ const CustomerManagement: React.FC = () => {
     };
     try {
       if (editingCustomerId) {
-        const response = await axios.put<Customer>(`http://192.168.1.8:5000/api/customers/${editingCustomerId}`, payload);
+        const response = await axios.put<Customer>(`http://192.168.1.3:5000/api/customers/${editingCustomerId}`, payload);
         setCustomers(customers.map((c) => (c._id === editingCustomerId ? response.data : c)));
         toast.success('Customer updated successfully');
       } else {
-        const response = await axios.post<Customer>('http://192.168.1.8:5000/api/customers', payload);
+        const response = await axios.post<Customer>('http://192.168.1.3:5000/api/customers', payload);
         setCustomers([...customers, response.data]);
         toast.success('Customer created successfully');
       }
@@ -156,7 +157,7 @@ const CustomerManagement: React.FC = () => {
 
   const handleEdit = async (id: string) => {
     try {
-      const response = await axios.get<Customer>(`http://192.168.1.8:5000/api/customers/${id}`);
+      const response = await axios.get<Customer>(`http://192.168.1.3:5000/api/customers/${id}`);
       setFormData({
         Customer_Type: response.data.Customer_Type,
         Full_Name: response.data.Full_Name,
@@ -179,7 +180,7 @@ const CustomerManagement: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
     setIsLoading(true);
     try {
-      await axios.delete(`http://192.168.1.8:5000/api/customers/${id}`);
+      await axios.delete(`http://192.168.1.3:5000/api/customers/${id}`);
       setCustomers(customers.filter((c) => c._id !== id));
       toast.success('Customer deleted successfully');
     } catch (err: any) {

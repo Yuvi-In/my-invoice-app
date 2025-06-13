@@ -1144,12 +1144,15 @@ const fs = require('fs');
 const { isAbsolute } = require('path');
 
 app.post('/api/invoices/print', async (req, res) => {
-  const { Document_Type, Customer_Name, Address, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
+  const { Document_Type, Customer_Name, Address, Tax_ID, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
 
-  // Fallback to current date if InvoiceDate is undefined or invalid
-  const currentDate = new Date('2025-06-09T17:52:00+0530'); // 05:52 PM +0530, June 09, 2025
-  const formattedCurrentDate = currentDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+  // Use current date/time for invoice generation
+  const currentDate = new Date();
+  const formattedCurrentDate = currentDate.toISOString().split('T')[0];
   const effectiveInvoiceDate = formattedCurrentDate;
+
+  // Generate invoice number ONCE and reuse
+  const invoiceNumber = `OLH${effectiveInvoiceDate.split('-').join('')}-${Math.floor(Math.random() * 100)}`;
 
   try {
     const doc = new PDFDocument({ size: 'A5', margin: 15 });
@@ -1157,7 +1160,6 @@ app.post('/api/invoices/print', async (req, res) => {
     doc.on('data', buffers.push.bind(buffers));
     doc.on('end', () => {
       const pdfData = Buffer.concat(buffers);
-      const invoiceNumber = `OLH${effectiveInvoiceDate.split('-').join('')}-${Math.floor(Math.random() * 100)}`;
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="invoice_${invoiceNumber}.pdf"`);
       res.send(pdfData);
@@ -1167,7 +1169,7 @@ app.post('/api/invoices/print', async (req, res) => {
     const logoWidth = 40;
     const pageWidth = doc.page.width;
     const margin = doc.page.margins.left;
-    const logoX = (pageWidth - 2 * margin - logoWidth) / 2 + margin;
+    const logoX = (pageWidth - 25 * margin - logoWidth) / 2 + margin;
     let logoLoaded = false;
     try {
       if (fs.existsSync('../src/assets/logo.png')) {
@@ -1180,12 +1182,12 @@ app.post('/api/invoices/print', async (req, res) => {
     if (!logoLoaded) {
       doc.fontSize(10).text('Orgalaser Logo', { align: 'center', underline: true });
     }
-    doc.moveDown(4);
+    doc.moveDown(0);
     doc.fontSize(12).font('Helvetica-Bold').text('Orgalasser Cutting Wedding Cards &', { align: 'center' });
     doc.fontSize(10).font('Helvetica-Bold').text('Graphic Items Pvt. Ltd', { align: 'center' });
     doc.fontSize(8).font('Helvetica-Bold').text('PV00204620', { align: 'center' });
     doc.moveDown(0.5);
-    doc.fontSize(8).font('Helvetica').text('325/Summer park, Batagama South, Kandana, 11320, Sri Lanka.', { align: 'center' });
+    doc.fontSize(8).font('Helvetica').text('325/D Summer park, Batagama South, Kandana, 11320, Sri Lanka.', { align: 'center' });
     doc.text('Tel: 0112236311 | Mob: 0714421095 / 0716520030', { align: 'center' });
     doc.text('Email: orgalaser@gmail.com', { align: 'center' });
     doc.moveDown(1);
@@ -1194,9 +1196,9 @@ app.post('/api/invoices/print', async (req, res) => {
     doc.fontSize(12).font('Helvetica-Bold').text(`${Document_Type}`, { align: 'center' });
     doc.moveDown(0.5);
 
-    const invoiceNumber = `OLH${effectiveInvoiceDate.split('-').join('')}-${Math.floor(Math.random() * 100)}`;
+    // Use the same invoiceNumber everywhere
     const dueDate = new Date(effectiveInvoiceDate);
-    dueDate.setDate(dueDate.getDate() + (Customer_Type === 'In-store' ? 0 : 15)); // 0 days for In-Store, 15 days for others
+    dueDate.setDate(dueDate.getDate() + (Customer_Type === 'In-store' ? 0 : 15));
     const dueDateStr = dueDate.toISOString().split('T')[0];
 
     doc.fontSize(8).font('Helvetica');
@@ -1205,42 +1207,39 @@ app.post('/api/invoices/print', async (req, res) => {
     doc.text(`Invoice Date: ${effectiveInvoiceDate}`, 20, detailsTop + 12);
     doc.text(`Due Date: ${dueDateStr}`, 20, detailsTop + 24);
     if (Purchasing_Order) {
-      doc.text(`Purchasing Order: ${Purchasing_Order}`, 20, detailsTop + 36);
+      doc.text(`Purchasing Order: ${Purchasing_Order || 'N/A' }`, 20, detailsTop + 36);
     }
-    doc.text(`Payment Term: ${Customer_Type === 'In-store' ? 'None' : '15 days'}`, 200, detailsTop);
-    doc.text(`Payment Method: ${Payment_Method || 'Not Specified'}`, 200, detailsTop + 12);
-    doc.text(`Salesperson: Mr. Yuvindu`, 200, detailsTop + 24);
-    doc.text(`Purchase Order: OH/HG/01/05/25`, 200, detailsTop + 36);
-    doc.moveDown(0.5);
-
+    
+    doc.text(`Customer Type: ${Customer_Type}`, 20, detailsTop + 36, { align: 'right' });
+    doc.text(`Payment Term: ${Customer_Type === 'In-store' ? 'None' : '15 days'}`, 200, detailsTop, {align: 'right' });
+    doc.text(`Payment Method: ${Payment_Method || 'Not Specified'}`, 200, detailsTop + 12, { align: 'right' });
+    doc.text(`Salesperson: Mr. Yuvindu`, 200, detailsTop + 24, { align: 'right' });
+    doc.moveDown(2);
+    
     // Billing Address and Customer Mobile
     doc.fontSize(8).font('Helvetica-Bold').text('Billing Address', 20, doc.y);
-    doc.moveDown(0.2);
     doc.font('Helvetica');
     doc.text(`${Customer_Name || 'Unknown Customer'}`, 20, doc.y);
-    doc.text(`${Address || 'Unknown'}`, 20, doc.y + 5);
-    doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 180, doc.y - 5, { align: 'right' });
+    doc.text(`${Address || 'Unknown'}`, 20, doc.y);
+    doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 180, doc.y, { align: 'right' });
+    doc.text(`TAX ID: ${Tax_ID || 'N/A'}`, 180, doc.y, { align: 'right' });
     doc.moveDown(1);
 
     // Items Table
     const tableTop = doc.y;
-    const itemNumberX = 20;
-    const nameX = 40;
-    const quantityX = 100;
-    const unitPriceX = 130;
-    const discountX = 160;
-    const subtotalX = 190;
-    const totalX = 220;
+    const itemNumberX = 30;
+    const nameX = 50;
+    const quantityX = 220;
+    const unitPriceX = 280;
+    const totalX = 350;
 
     doc.fontSize(8).font('Helvetica-Bold');
     doc.text('#', itemNumberX, tableTop + 5);
     doc.text('Name', nameX, tableTop + 5);
     doc.text('Quantity', quantityX, tableTop + 5);
     doc.text('Unit Price', unitPriceX, tableTop + 5);
-    doc.text('Discount', discountX, tableTop + 5);
-    doc.text('Subtotal', subtotalX, tableTop + 5);
-    doc.text('Total', totalX, tableTop + 5);
-    doc.rect(20, tableTop, 230, 20).stroke();
+    doc.text('Total', totalX, tableTop + 5, { align: 'center' });
+    doc.rect(20, tableTop, 385, 20).stroke();
     doc.moveDown(0.5);
 
     let position = doc.y + 5;
@@ -1249,69 +1248,68 @@ app.post('/api/invoices/print', async (req, res) => {
     const advanceTotal = Number(Advance_Payment) || 0;
     (Items || []).forEach((item, index) => {
       const rowTop = position;
-      const itemDiscount = (item.Rate || 0) * (item.Quantity || 0) * (discountTotal / 100);
-      const subtotal = (item.Quantity || 0) * (item.Rate || 0) - itemDiscount;
+      const total = (item.Quantity || 0) * (item.Rate || 0);
+      
       doc.text((index + 1).toString(), itemNumberX, rowTop);
-      doc.text(item.Item_Description || 'N/A', nameX, rowTop, { width: 60 });
+      doc.text(item.Item_Description || 'N/A', nameX, rowTop, { width: 200 });
       doc.text((item.Quantity || 0).toString(), quantityX, rowTop, { width: 30, align: 'center' });
-      doc.text(`LKR ${(item.Rate || 0).toFixed(2)}`, unitPriceX, rowTop, { width: 30 });
-      doc.text(`LKR ${itemDiscount.toFixed(2)}`, discountX, rowTop, { width: 30 });
-      doc.text(`LKR ${subtotal.toFixed(2)}`, subtotalX, rowTop, { width: 30 });
-      doc.text(`LKR ${subtotal.toFixed(2)}`, totalX, rowTop, { width: 30 });
+      doc.text(`LKR ${(item.Rate || 0).toFixed(2)}`, unitPriceX, rowTop, { width: 50, align: 'center' });
+      doc.text(`LKR ${total.toFixed(2)}`, totalX, rowTop, { width: 50, align: 'center' });
       position += 30;
     });
-    doc.rect(20, position - 5, 230, 0).stroke();
-    doc.moveDown(4);
-
-    // Amount in Words
-    const netTotal = (Number(Total_Amount) || 0) - discountTotal - advanceTotal;
-    doc.text(`Amount in Words: ${convertToWords(netTotal)} Sri Lankan Rupees only`, 20, doc.y);
-    doc.moveDown(1.5);
+    doc.rect(20, position - 5, 385, 0).stroke();
+    doc.moveDown(3);
+    
+    const discountAmount = (discountTotal / 100) * (Number(Total_Amount) || 0);
+    const netTotal = (Number(Total_Amount) || 0) - discountAmount;
+    const BalanceDue = netTotal - advanceTotal;
 
     // Totals
     const totalsTop = doc.y;
-    doc.font('Helvetica-Bold');
-    doc.text('Subtotal:', 180, totalsTop);
-    doc.text('Discount:', 180, totalsTop + 12);
-    doc.text('Advance:', 180, totalsTop + 24);
-    doc.text('Total:', 180, totalsTop + 36);
-    doc.text('Paid:', 180, totalsTop + 48);
-    doc.text('Balance Due:', 180, totalsTop + 60);
+    doc.fontSize(8).font('Helvetica-Bold');
+    doc.text('Subtotal:', 280, totalsTop);
+    doc.text('Discount:', 280, totalsTop + 15);
+    doc.text('Total:', 280, totalsTop + 30);
+    doc.text('Paid:', 280, totalsTop + 45);
+    doc.text('Balance Due:', 280, totalsTop + 65);
 
-    doc.font('Helvetica');
-    doc.text(`LKR ${(Number(Total_Amount) || 0).toFixed(2)}`, 230, totalsTop, { align: 'right' });
-    doc.text(`LKR ${discountTotal.toFixed(2)}`, 230, totalsTop + 12, { align: 'right' });
-    doc.text(`LKR ${advanceTotal.toFixed(2)}`, 230, totalsTop + 24, { align: 'right' });
-    doc.text(`LKR ${netTotal.toFixed(2)}`, 230, totalsTop + 36, { align: 'right' });
-    doc.text('LKR 0.00', 230, totalsTop + 48, { align: 'right' });
-    doc.text(`LKR ${netTotal.toFixed(2)}`, 230, totalsTop + 60, { align: 'right' });
+    doc.fontSize(8).font('Helvetica');
+    doc.text(`LKR ${(Number(Total_Amount) || 0).toFixed(2)}`, 250, totalsTop, { align: 'right' });
+    doc.text(`${discountTotal.toFixed(2)} %`, 230, totalsTop + 15, { align: 'right' });
+    doc.text(`LKR ${netTotal.toFixed(2)}`, 230, totalsTop + 30, { align: 'right' });
+    doc.text(`LKR ${advanceTotal.toFixed(2)}`, 230, totalsTop + 45, { align: 'right' });
+    doc.text(`LKR ${BalanceDue.toFixed(2)}`, 230, totalsTop + 65, { align: 'right' });
     doc.save();
     doc.opacity(0.3);
-    doc.rect(180, totalsTop + 54, 80, 0).stroke();
+    doc.rect(280, totalsTop + 60, 125, 0).stroke();
+    doc.rect(280, totalsTop + 75, 125, 0).stroke();
+    doc.rect(280, totalsTop + 78, 125, 0).stroke();
     doc.opacity(1);
     doc.restore();
 
     // Notes
-    doc.fontSize(6).font('Helvetica-Oblique');
-    doc.text('This is not a VAT invoice.', 20, doc.y - 15);
+    doc.fontSize(8).font('Helvetica-Oblique');
+    doc.fillColor('red').text('This is not a VAT invoice.', 20, doc.y - 70).fillColor('black');
+    doc.fontSize(7).font('Helvetica-Oblique');
     doc.text('If you have any questions concerning this Invoice please be kind to inform us.', 20, doc.y + 5);
-    doc.fillColor('red').text('Lead Time: Within 14-21 working days from the date of receiving the Purchasing Order or 50% Advance.', 20, doc.y + 5).fillColor('black');
     doc.moveDown(1.5);
-
+    
     // Bank Details
     doc.fontSize(7).font('Helvetica');
     doc.text('Bank Name: Commercial Bank of Ceylon PLC', 20, doc.y);
-    doc.text('Account Name: Orgalaser Hologram Pvt. Ltd.', 20, doc.y + 5);
+    doc.text('Account Name: Orgalaser Cutting Wedding Cards & Graphic Items Pvt. Ltd.', 20, doc.y + 5);
     doc.text('Account Number: 1000666319', 20, doc.y + 5);
     doc.text('Bank Code: 031', 20, doc.y + 5);
     doc.moveDown(1.5);
-
+    
     // Footer
-    doc.fontSize(6).font('Helvetica');
+    doc.fontSize(8).font('Helvetica-Bold');
+    doc.text('Please make all cheques payable to Orgalaser Cutting Wedding Cards & Graphic Items Pvt. Ltd.', { align: 'center' })
+    doc.moveDown(1);
+    doc.fontSize(7).font('Helvetica');
     doc.text('This is a computer generated advice and does not require manual signature.', { align: 'center' });
     doc.text('We look forward to the opportunity of being of service to you', { align: 'center' });
     doc.text('Thank you for your business!', { align: 'center' });
-    doc.text('Page 1 of 1', { align: 'center' });
 
     doc.end();
   } catch (error) {
@@ -1350,55 +1348,6 @@ app.put('/api/invoices/:id', async (req, res) => {
   }
 });
 
-// Helper function to convert number to words
-function convertToWords(amount) {
-  const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine'];
-  const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-
-  function convertGroup(num) {
-    let words = '';
-    if (num >= 100) {
-      words += units[Math.floor(num / 100)] + ' Hundred ';
-      num %= 100;
-    }
-    if (num >= 10 && num < 20) {
-      words += teens[num - 10] + ' ';
-    } else {
-      if (num >= 20) {
-        words += tens[Math.floor(num / 10)] + ' ';
-        num %= 10;
-      }
-      if (num > 0) {
-        words += units[num] + ' ';
-      }
-    }
-    return words.trim();
-  }
-
-  const amountStr = amount.toFixed(2).split('.');
-  const rupees = parseInt(amountStr[0]);
-  const paise = parseInt(amountStr[1]);
-
-  let words = '';
-  if (rupees === 0) words = 'Zero';
-  else {
-    const chunks = [];
-    let num = rupees;
-    while (num > 0) {
-      chunks.unshift(num % 1000);
-      num = Math.floor(num / 1000);
-    }
-    const chunkWords = ['Thousand', 'Million', 'Billion'];
-    for (let i = 0; i < chunks.length; i++) {
-      if (chunks[i] > 0) {
-        words = convertGroup(chunks[i]) + (i > 0 ? ` ${chunkWords[i - 1]} ` : '') + words;
-      }
-    }
-  }
-  words = words.trim() + (paise > 0 ? ` and ${convertGroup(paise)} Cents` : '');
-  return words || 'Zero';
-}
 
 // Start server
 const PORT = process.env.PORT || 5000;
