@@ -46,15 +46,6 @@ const customerSchema = new mongoose.Schema({
   },
   Address: { type: String },
   Nickname: { type: String },
-  Tax_ID: {
-    type: String,
-    validate: {
-      validator: function (value) {
-        return !value || /^\d{9}$|^\d{9}-7000$/.test(value);
-      },
-      message: 'Tax ID must be 9 digits or 9 digits followed by -7000',
-    },
-  },
   Job_Type: {
     type: String,
     enum: ['Wedding Invitations', 'Shoe Laser Cutting', 'Laser Cutting'],
@@ -375,7 +366,7 @@ app.post('/api/customers', async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { Customer_Type, Full_Name, Contact_Person, Email, Phone_Number, Address, Tax_ID, Job_Type, Status, Nickname } = req.body;
+    const { Customer_Type, Full_Name, Contact_Person, Email, Phone_Number, Address, Job_Type, Status, Nickname } = req.body;
 
     if (!Customer_Type || !Full_Name || !Job_Type) {
       throw new Error('Customer type, full name, and job type are required. Please fill in all mandatory fields.');
@@ -394,7 +385,6 @@ app.post('/api/customers', async (req, res) => {
       Email,
       Phone_Number,
       Address,
-      Tax_ID,
       Job_Type,
       Status: Status || 'Active',
     });
@@ -442,7 +432,7 @@ app.put('/api/customers/:id', async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   try {
-    const { Customer_Type, Full_Name, Contact_Person, Email, Phone_Number, Address, Tax_ID, Job_Type, Status, Nickname } = req.body;
+    const { Customer_Type, Full_Name, Contact_Person, Email, Phone_Number, Address, Job_Type, Status, Nickname } = req.body;
 
     if (!Customer_Type || !Full_Name || !Job_Type) {
       throw new Error('Customer type, full name, and job type are required. Please fill in all mandatory fields.');
@@ -463,7 +453,6 @@ app.put('/api/customers/:id', async (req, res) => {
         Email,
         Phone_Number,
         Address,
-        Tax_ID,
         Job_Type,
         Status: Status || 'Active',
         Updated_At: new Date(),
@@ -555,14 +544,12 @@ app.get('/api/seed-customers', async (req, res) => {
         Customer_Type: 'In-store',
         Full_Name: 'John Doe',
         Phone_Number: '123456789',
-        Tax_ID: '987654321',
         Job_Type: 'Wedding Invitations',
         Status: 'Active',
       },
       {
         Customer_Type: 'Production',
         Full_Name: 'Jane Smith',
-        Tax_ID: '123456789-7000',
         Job_Type: 'Shoe Laser Cutting',
         Status: 'Active',
       },
@@ -903,7 +890,6 @@ app.post('/api/customers/search', async (req, res) => {
     if (!Customer_Type || !Identifier) {
       return res.status(400).json({ error: 'Customer type and identifier (Phone Number or Nickname) are required.' });
     }
-
     if (!['In-store', 'Production', 'Wedding Invitation Maker'].includes(Customer_Type)) {
       return res.status(400).json({ error: 'Invalid customer type. Must be In-store, Production, or Wedding Invitation Maker.' });
     }
@@ -1144,7 +1130,7 @@ const fs = require('fs');
 const { isAbsolute } = require('path');
 
 app.post('/api/invoices/print', async (req, res) => {
-  const { Document_Type, Customer_Name, Address, Tax_ID, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
+  const { Document_Type, Customer_Name, Address, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
 
   // Use current date/time for invoice generation
   const currentDate = new Date();
@@ -1222,7 +1208,6 @@ app.post('/api/invoices/print', async (req, res) => {
     doc.text(`${Customer_Name || 'Unknown Customer'}`, 20, doc.y);
     doc.text(`${Address || 'Unknown'}`, 20, doc.y);
     doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 180, doc.y, { align: 'right' });
-    doc.text(`TAX ID: ${Tax_ID || 'N/A'}`, 180, doc.y, { align: 'right' });
     doc.moveDown(1);
 
     // Items Table

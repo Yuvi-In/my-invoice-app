@@ -2,6 +2,8 @@ import React, { useState, useEffect } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
 
+
+const BASE_URL = "http://192.168.1.6:5000/api";
 interface Customer {
   _id: string;
   Customer_Type: string;
@@ -10,7 +12,7 @@ interface Customer {
   Phone_Number?: string;
   Nickname?: string;
   Instore_Phone_Number?: string;
-  TAX_ID?: number;
+  Tax_ID?: string; // FIX: Use correct casing and string type
 }
 
 interface LineItem {
@@ -66,7 +68,7 @@ const InvoiceManagement: React.FC = () => {
 
     try {
       const response = await axios.post(
-        "http://192.168.1.3:5000/api/customers/search",
+        `${BASE_URL}/customers/search`,
         {
           Customer_Type: customerType,
           Identifier: identifier,
@@ -124,9 +126,8 @@ const InvoiceManagement: React.FC = () => {
         body.Duration = parseInt(duration);
         body.Material_Cost = materialCost ? parseFloat(materialCost) : 0;
       }
-
       const response = await axios.post(
-        "http://192.168.1.3:5000/api/invoices/scan",
+        `${BASE_URL}/invoices/scan`,
         body
       );
       const newItem: LineItem = {
@@ -139,18 +140,18 @@ const InvoiceManagement: React.FC = () => {
       setBarcode("");
       setQuantity(1);
       Swal.fire("Success", "Item added to invoice!", "success");
-    } catch (error: any) {
+        } catch (error: any) {
       Swal.fire(
         "Error",
         error.response?.data?.error || "Failed to process barcode.",
         "error"
       );
-    }
-  };
+        }
+      };
 
-  // Handle delete item
-  const handleDeleteItem = (index: number) => {
-    Swal.fire({
+      // Handle delete item
+      const handleDeleteItem = (index: number) => {
+        Swal.fire({
       title: "Are you sure?",
       text: "This item will be removed from the invoice.",
       icon: "warning",
@@ -158,7 +159,7 @@ const InvoiceManagement: React.FC = () => {
       confirmButtonColor: "#3085d6",
       cancelButtonColor: "#d33",
       confirmButtonText: "Yes, delete it!",
-    }).then((result) => {
+        }).then((result) => {
       if (result.isConfirmed) {
         setItems(items.filter((_, i) => i !== index));
         Swal.fire(
@@ -167,37 +168,46 @@ const InvoiceManagement: React.FC = () => {
           "success"
         );
       }
-    });
-  };
+        });
+      };
 
-  // Calculate final total with discount
-  const finalTotal = items.reduce((sum, item) => sum + item.Line_Total, 0);
-  const netTotal = finalTotal - (finalTotal * (discountPrice / 100)) - advancePayment;
+      // Calculate final total with discount
+      const finalTotal = items.reduce((sum, item) => sum + item.Line_Total, 0);
+      const netTotal = finalTotal - (finalTotal * (discountPrice / 100)) - advancePayment;
 
-  // Handle save invoice
-  const handleSaveInvoice = async () => {
-    if (!documentType) {
+      // Handle save invoice
+      const handleSaveInvoice = async () => {
+        if (!documentType) {
       Swal.fire(
         "Error",
         "Please select a document type (Invoice or Quotation).",
         "error"
       );
       return;
-    }
-    if (!selectedCustomer) {
+        }
+        if (!selectedCustomer) {
       Swal.fire("Error", "Please select a customer.", "error");
       return;
-    }
-    if (items.length === 0) {
+        }
+        if (items.length === 0) {
       Swal.fire(
         "Error",
         "Please add at least one item to the invoice.",
         "error"
       );
       return;
-    }
+        }
+        // FIX: Prevent negative discount/advance
+        if (discountPrice < 0) {
+          Swal.fire("Error", "Discount cannot be negative.", "error");
+          return;
+        }
+        if (advancePayment < 0) {
+          Swal.fire("Error", "Advance payment cannot be negative.", "error");
+          return;
+        }
 
-    try {
+        try {
       const formattedItems = items.map((item) => ({
         Item_Description: item.Item_Description,
         Quantity: Number(item.Quantity),
@@ -206,7 +216,7 @@ const InvoiceManagement: React.FC = () => {
       }));
 
       const response = await axios.post(
-        "http://192.168.1.3:5000/api/invoices",
+        `${BASE_URL}/invoices`,
         {
           Document_Type: documentType,
           Customer_ID: selectedCustomer._id,
@@ -236,27 +246,36 @@ const InvoiceManagement: React.FC = () => {
       setItems([]);
       setBarcode("");
       setQuantity(1);
-    } catch (error: any) {
+        } catch (error: any) {
       Swal.fire(
         "Error",
         error.response?.data?.error || "Failed to save invoice.",
         "error"
       );
-    }
-  };
+        }
+      };
 
-  // Handle print invoice
-  const handlePrintInvoice = async () => {
-    if (!selectedCustomer) {
+      // Handle print invoice
+      const handlePrintInvoice = async () => {
+        if (!selectedCustomer) {
       Swal.fire("Error", "Please select a customer before printing.", "error");
       return;
-    }
-    if (items.length === 0) {
+        }
+        if (items.length === 0) {
       Swal.fire("Error", "Please add at least one item to print the invoice.", "error");
       return;
-    }
+        }
+        // FIX: Prevent negative discount/advance
+        if (discountPrice < 0) {
+          Swal.fire("Error", "Discount cannot be negative.", "error");
+          return;
+        }
+        if (advancePayment < 0) {
+          Swal.fire("Error", "Advance payment cannot be negative.", "error");
+          return;
+        }
 
-    try {
+        try {
       const formattedItems = items.map((item) => ({
         Item_Description: item.Item_Description,
         Quantity: Number(item.Quantity),
@@ -264,14 +283,14 @@ const InvoiceManagement: React.FC = () => {
         Line_Total: Number(item.Line_Total),
       }));
 
-      const currentDate = new Date("2025-06-12T16:46:00+0530"); // 04:46 PM +0530, June 12, 2025
+      const currentDate = new Date(); // FIX: Use current date/time
       const effectiveInvoiceDate = invoiceDate || currentDate.toISOString().split("T")[0];
 
       const invoiceData = {
         Document_Type: documentType || "Invoice",
         Customer_Name: selectedCustomer.Full_Name,
         Address: selectedCustomer.Address || "N/A",
-        TAX_ID: selectedCustomer.TAX_ID || "N/A",
+        TAX_ID: selectedCustomer.Tax_ID || "N/A",
         Items: formattedItems,
         Total_Amount: finalTotal,
         InvoiceDate: effectiveInvoiceDate,
@@ -285,7 +304,7 @@ const InvoiceManagement: React.FC = () => {
 
       console.log("Sending invoiceData:", invoiceData);
 
-      const response = await axios.post("http://192.168.1.3:5000/api/invoices/print", invoiceData, {
+      const response = await axios.post(`${BASE_URL}/invoices/print`, invoiceData, {
         responseType: "blob",
       });
 
@@ -297,59 +316,59 @@ const InvoiceManagement: React.FC = () => {
       link.click();
       document.body.removeChild(link);
       Swal.fire("Success", "Invoice PDF downloaded!", "success");
-    } catch (error: any) {
+        } catch (error: any) {
       Swal.fire("Error", error.response?.data?.error || "Failed to print invoice.", "error");
       console.error("Print error:", error);
-    }
-  };
+        }
+      };
 
-  // Handle invoice search
-  const handleSearchInvoice = async () => {
-    try {
-      const response = await axios.get("http://192.168.1.3:5000/api/invoices/search", {
+      // Handle invoice search
+      const handleSearchInvoice = async () => {
+        try {
+      const response = await axios.get(`${BASE_URL}/invoices/search`, {
         params: { nickname: searchTerm, phone: searchTerm },
       });
       setInvoices(response.data);
       Swal.fire("Success", "Invoices found!", "success");
-    } catch (error: any) {
+        } catch (error: any) {
       Swal.fire("Error", error.response?.data?.error || "Failed to search invoices.", "error");
-    }
-  };
+        }
+      };
 
-  // Handle update invoice
-  const handleUpdateInvoice = async () => {
-    if (!selectedInvoice) {
+      // Handle update invoice
+      const handleUpdateInvoice = async () => {
+        if (!selectedInvoice) {
       Swal.fire("Error", "Please select an invoice to update.", "error");
       return;
-    }
+        }
 
-    try {
-      await axios.put(`http://192.168.1.3:5000/api/invoices/${selectedInvoice._id}`, {
+        try {
+      await axios.put(`${BASE_URL}/invoices/${selectedInvoice._id}`, {
         Payment_Status: selectedInvoice.Payment_Status || "Unpaid",
         Advance_Payment: selectedInvoice.Advance_Payment || 0,
       });
       Swal.fire("Success", "Invoice updated successfully!", "success");
       // Refresh invoices
-      const response = await axios.get("http://192.168.1.3:5000/api/invoices");
+      const response = await axios.get(`${BASE_URL}/invoices`);
       setInvoices(response.data);
       setSelectedInvoice(null);
-    } catch (error: any) {
+        } catch (error: any) {
       Swal.fire("Error", error.response?.data?.error || "Failed to update invoice.", "error");
-    }
-  };
+        }
+      };
 
-  // Fetch invoices on mount
-  useEffect(() => {
-    const fetchInvoices = async () => {
+      // Fetch invoices on mount
+      useEffect(() => {
+        const fetchInvoices = async () => {
       try {
-        const response = await axios.get("http://192.168.1.3:5000/api/invoices");
+        const response = await axios.get(`${BASE_URL}/invoices`);
         setInvoices(response.data);
       } catch (error: any) {
         Swal.fire("Error", "Failed to load invoices.", "error");
       }
-    };
-    fetchInvoices();
-  }, []);
+        };
+        fetchInvoices();
+      }, []);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -408,9 +427,9 @@ const InvoiceManagement: React.FC = () => {
                 <strong>Address:</strong> {selectedCustomer.Address}
               </p>
             )}
-            {selectedCustomer.TAX_ID && (
+            {selectedCustomer.Tax_ID && (
               <p>
-                <strong>TAX ID:</strong> {selectedCustomer.TAX_ID}
+                <strong>TAX ID:</strong> {selectedCustomer.Tax_ID}
               </p>
             )}
           </div>

@@ -1,6 +1,8 @@
 import { useState, ChangeEvent, FormEvent } from 'react';
 import axios from 'axios';
 
+const BASE_URL = "http://192.168.1.6:5000/api";
+
 type Item = {
   Item_Description: string;
   Quantity: number;
@@ -36,6 +38,7 @@ const InvoiceForm = () => {
     Discount_Price: 0,
     Advance_Payment: 0,
   });
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -65,24 +68,62 @@ const InvoiceForm = () => {
     }));
   };
 
+  const validateForm = () => {
+    if (!formData.Customer_Name.trim()) {
+      alert("Customer Name/Nickname is required.");
+      return false;
+    }
+    if (!formData.Customer_Mobile.trim()) {
+      alert("Mobile/Phone is required.");
+      return false;
+    }
+    if (formData.Discount_Price < 0) {
+      alert("Discount cannot be negative.");
+      return false;
+    }
+    if (formData.Advance_Payment < 0) {
+      alert("Advance payment cannot be negative.");
+      return false;
+    }
+    if (formData.Items.length === 0) {
+      alert("At least one item is required.");
+      return false;
+    }
+    for (const item of formData.Items) {
+      if (!item.Item_Description.trim() || item.Quantity < 1 || item.Rate < 0) {
+        alert("Each item must have a description, quantity > 0, and rate ≥ 0.");
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const customer = await axios.post('http://192.168.1.3:5000/api/customers/search', {
-      Customer_Type: formData.Customer_Type,
-      Identifier: formData.Customer_Type === 'In-store' ? formData.Customer_Mobile : formData.Customer_Name,
-    });
-    const payload = {
-      ...formData,
-      Customer_ID: customer.data._id,
-      invoiceDateInput: new Date().toISOString().split('T')[0],
-    };
-    const response = await axios.post('http://192.168.1.3:5000/api/invoices', payload);
-    alert('Invoice created successfully!');
-    printInvoice(response.data._id);
+    if (!validateForm()) return;
+    setIsSaving(true);
+    try {
+      const customer = await axios.post(`${BASE_URL}/customers/search`, {
+        Customer_Type: formData.Customer_Type,
+        Identifier: formData.Customer_Type === 'In-store' ? formData.Customer_Mobile : formData.Customer_Name,
+      });
+      const payload = {
+        ...formData,
+        Customer_ID: customer.data._id,
+        invoiceDateInput: new Date().toISOString().split('T')[0],
+      };
+      const response = await axios.post(`${BASE_URL}/invoices`, payload);
+      alert('Invoice created successfully!');
+      await printInvoice(response.data._id);
+    } catch (err: any) {
+      alert(err.response?.data?.error || "Failed to create invoice.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const printInvoice = async (invoiceId: string) => {
-    const response = await axios.post(`http://192.168.1.3:5000/api/invoices/${invoiceId}/print`, formData, {
+    const response = await axios.post(`${BASE_URL}/invoices/${invoiceId}/print`, formData, {
       responseType: 'arraybuffer',
     });
     const blob = new Blob([response.data], { type: 'application/pdf' });
@@ -160,7 +201,9 @@ const InvoiceForm = () => {
           <label className="block text-sm font-medium text-gray-700">Total Amount</label>
           <input type="text" value={formData.Total_Amount.toFixed(2)} readOnly className="mt-1 block w-full p-2 border border-gray-300 rounded-md bg-gray-100" />
         </div>
-        <button type="submit" className="w-full px-4 py-2 bg-green-500 text-white rounded-md">Create & Print Invoice</button>
+        <button type="submit" className="w-full px-4 py-2 bg-green-500 text-white rounded-md" disabled={isSaving}>
+          {isSaving ? "Saving..." : "Create & Print Invoice"}
+        </button>
       </form>
     </div>
   );
