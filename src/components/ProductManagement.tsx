@@ -5,6 +5,8 @@ import { PDFDownloadLink } from '@react-pdf/renderer';
 import JsBarcode from 'jsbarcode';
 import BarcodePDF from './BarcodePDF';
 
+const BASE_URL = "http://192.168.1.6:5000/api";
+
 interface Product {
   _id: string;
   Product_Category: 'Shoe Laser Cutting' | 'Wedding Invitations' | 'Laser Cutting';
@@ -89,7 +91,7 @@ const ProductManagement: React.FC = () => {
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get<Product[]>('http://192.168.1.3:5000/api/products');
+      const response = await axios.get<Product[]>(`${BASE_URL}/products`);
       setProducts(response.data);
     } catch (err) {
       console.error('Error fetching products:', err);
@@ -105,7 +107,7 @@ const ProductManagement: React.FC = () => {
       return false;
     }
     try {
-      const response = await axios.get<Product[]>('http://192.168.1.3:5000/api/products');
+      const response = await axios.get<Product[]>(`${BASE_URL}/products`);
       return !response.data.some((p) => p.Product_ID === productId && p._id !== editingProductId);
     } catch (err) {
       toast.error('Failed to check product ID availability');
@@ -116,7 +118,7 @@ const ProductManagement: React.FC = () => {
   const suggestUniqueCode = async () => {
     if (formData.Product_Category !== 'Shoe Laser Cutting') return;
     try {
-      const response = await axios.get<Product[]>('http://192.168.1.3:5000/api/products');
+      const response = await axios.get<Product[]>(`${BASE_URL}/products`);
       setProducts(response.data);
       const prefix = `${formData.Customer_Nickname}-${formData.Material_Type}-`;
       const existingCodes = response.data
@@ -149,7 +151,8 @@ const ProductManagement: React.FC = () => {
       if (!formData.Price || isNaN(Number(formData.Price)) || Number(formData.Price) <= 0) {
         newErrors.Price = 'Valid positive price is required';
       }
-      productId = `${formData.Customer_Nickname}-${formData.Material_Type}-${formData.Unique_Code}`;
+      // FIX: Add SLC- prefix to match backend
+      productId = `SLC-${formData.Customer_Nickname}-${formData.Material_Type}-${formData.Unique_Code}`;
       if (!productId || productId.trim() === '') {
         newErrors.Unique_Code = 'Invalid product ID generated';
       } else {
@@ -182,12 +185,13 @@ const ProductManagement: React.FC = () => {
         newErrors.Price = 'Valid positive price is required';
       }
       if (!editingProductId) {
-        productId = `${formData.Product_Type}-${formData.Material_Type}-${formData.Sticker_Option === 'With Sticker' ? `Sticker-${formData.Sticker_Type}-${formData.Sticker_Color}` : 'NoSticker'}-TEMP`;
+        // This is just for checking, backend will generate the final Product_ID
+        productId = `WI-${formData.Material_Type}-${formData.Product_Type}-${formData.Sticker_Option === 'With Sticker' ? 'With Sticker' : 'Without Sticker'}-0001`;
         if (!productId || productId.includes('undefined') || productId.includes('null')) {
           newErrors.Product_Type = 'Invalid product ID generated';
         } else {
           setIsChecking(true);
-          const isAvailable = await checkProductIdAvailability(productId.replace('-TEMP', '-0001'));
+          const isAvailable = await checkProductIdAvailability(productId);
           setIsChecking(false);
           if (!isAvailable) {
             newErrors.Product_Type = `A similar product ID already exists. Try a different product type or material.`;
@@ -195,7 +199,8 @@ const ProductManagement: React.FC = () => {
         }
       }
     } else if (formData.Product_Category === 'Laser Cutting') {
-      productId = 'LASER-CUTTING-COMMON';
+      // FIX: Use 'LC' as productId to match backend
+      productId = 'LC';
       setIsChecking(true);
       const isAvailable = await checkProductIdAvailability(productId);
       setIsChecking(false);
@@ -251,13 +256,13 @@ const ProductManagement: React.FC = () => {
     };
     try {
       if (editingProductId) {
-        const response = await axios.put<Product>(`http://192.168.1.3:5000/api/products/${editingProductId}`, payload);
-        setProducts(products.map((p) => (p._id === editingProductId ? response.data : p)));
-        toast.success('Product updated successfully');
+      const response = await axios.put<Product>(`${BASE_URL}/products/${editingProductId}`, payload);
+      setProducts(products.map((p) => (p._id === editingProductId ? response.data : p)));
+      toast.success('Product updated successfully');
       } else {
-        const response = await axios.post<Product>('http://192.168.1.3:5000/api/products', payload);
-        setProducts([...products, response.data]);
-        toast.success('Product created successfully');
+      const response = await axios.post<Product>(`${BASE_URL}/products`, payload);
+      setProducts([...products, response.data]);
+      toast.success('Product created successfully');
       }
       resetForm();
     } catch (err: any) {
@@ -293,7 +298,7 @@ const ProductManagement: React.FC = () => {
 
   const handleEdit = async (id: string) => {
     try {
-      const response = await axios.get<Product>(`http://192.168.1.3:5000/api/products/${id}`);
+      const response = await axios.get<Product>(`${BASE_URL}/products/${id}`);
       setFormData({
         Product_Category: response.data.Product_Category,
         Customer_Nickname: response.data.Customer_Nickname || '',
@@ -316,7 +321,7 @@ const ProductManagement: React.FC = () => {
     if (!window.confirm('Are you sure you want to delete this product?')) return;
     setIsLoading(true);
     try {
-      await axios.delete(`http://192.168.1.3:5000/api/products/${id}`);
+      await axios.delete(`${BASE_URL}/products/${id}`);
       setProducts(products.filter((p) => p._id !== id));
       toast.success('Product deleted successfully');
     } catch (err: any) {

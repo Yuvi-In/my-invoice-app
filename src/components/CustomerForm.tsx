@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Swal from 'sweetalert2';
 
+const BASE_URL = "http://192.168.1.6:5000/api";
+
 interface CustomerFormProps {
   customerId?: string;
   onSave?: (data: any) => void;
@@ -23,7 +25,7 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customerId, onSave }) => {
   useEffect(() => {
     if (customerId) {
       // Fetch customer data for editing
-      fetch(`http://192.168.1.3:5000/api/customers/${customerId}`)
+      fetch(`${BASE_URL}/customers/${customerId}`)
         .then((response) => response.json())
         .then((data) => {
           if (data.error) {
@@ -45,8 +47,8 @@ const CustomerForm: React.FC<CustomerFormProps> = ({ customerId, onSave }) => {
   };
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-    const url = customerId ? `http://192.168.1.3:5000/api/customers/${customerId}` : 'http://192.168.1.3:5000/api/customers';
+    e.preventDefault();
+    const url = customerId ? `${BASE_URL}/customers/${customerId}` : `${BASE_URL}/customers`;
     const method = customerId ? 'PUT' : 'POST';
 
     fetch(url, {

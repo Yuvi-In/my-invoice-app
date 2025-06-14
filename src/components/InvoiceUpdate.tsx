@@ -1,36 +1,56 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
+const BASE_URL = "http://192.168.1.6:5000/api";
+
 type Invoice = {
   Document_ID: string;
   Payment_Status: string;
-  Advance_Payment: string;
-  // add other fields if needed
+  Advance_Payment: number;
 };
 
 type InvoiceUpdateProps = {
   invoiceId: string;
+  onUpdated?: () => void;
 };
 
-const InvoiceUpdate = ({ invoiceId }: InvoiceUpdateProps) => {
+const InvoiceUpdate = ({ invoiceId, onUpdated }: InvoiceUpdateProps) => {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
-  const [updateData, setUpdateData] = useState<{ Payment_Status: string; Advance_Payment: string }>({ Payment_Status: '', Advance_Payment: '' });
+  const [updateData, setUpdateData] = useState<{ Payment_Status: string; Advance_Payment: number }>({ Payment_Status: 'Unpaid', Advance_Payment: 0 });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchInvoice = async () => {
-      const response = await axios.get(`http://192.168.1.3:5000/api/invoices/${invoiceId}`);
-      setInvoice(response.data);
-      setUpdateData({ Payment_Status: response.data.Payment_Status, Advance_Payment: response.data.Advance_Payment });
+      try {
+        const response = await axios.get(`${BASE_URL}/invoices/${invoiceId}`);
+        setInvoice(response.data);
+        setUpdateData({
+          Payment_Status: response.data.Payment_Status || 'Unpaid',
+          Advance_Payment: Number(response.data.Advance_Payment) || 0,
+        });
+      } catch (err: any) {
+        setError("Failed to load invoice.");
+      }
     };
     fetchInvoice();
   }, [invoiceId]);
 
   const handleUpdate = async () => {
-    await axios.put(`http://192.168.1.3:5000/api/invoices/${invoiceId}`, updateData);
-    alert('Invoice updated successfully!');
-    window.location.reload();
+    setIsLoading(true);
+    setError(null);
+    try {
+      await axios.put(`${BASE_URL}/invoices/${invoiceId}`, updateData);
+      alert('Invoice updated successfully!');
+      if (onUpdated) onUpdated();
+    } catch (err: any) {
+      setError("Failed to update invoice.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  if (error) return <div className="text-red-500">{error}</div>;
   if (!invoice) return <div>Loading...</div>;
 
   return (
@@ -54,12 +74,18 @@ const InvoiceUpdate = ({ invoiceId }: InvoiceUpdateProps) => {
           <input
             type="number"
             value={updateData.Advance_Payment}
-            onChange={(e) => setUpdateData((prev) => ({ ...prev, Advance_Payment: e.target.value }))}
+            onChange={(e) => setUpdateData((prev) => ({ ...prev, Advance_Payment: Number(e.target.value) }))}
             min="0"
             className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
           />
         </div>
-        <button onClick={handleUpdate} className="px-4 py-2 bg-green-500 text-white rounded-md">Update</button>
+        <button
+          onClick={handleUpdate}
+          className="px-4 py-2 bg-green-500 text-white rounded-md"
+          disabled={isLoading}
+        >
+          {isLoading ? "Updating..." : "Update"}
+        </button>
       </div>
     </div>
   );

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
+const BASE_URL = "http://192.168.1.6:5000/api";
+
 interface Customer {
   _id: string;
   customerType: 'Production' | 'In-store' | 'Wedding Invitation Maker';
@@ -31,7 +33,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onEdit }) => {
     const fetchCustomers = async () => {
       setIsLoading(true);
       try {
-        const response = await axios.get<Customer[]>('http://192.168.1.3:5000/api/customers');
+        const response = await axios.get<Customer[]>(`${BASE_URL}/customers`);
         setCustomers(response.data);
       } catch (err) {
         toast.error('Failed to fetch customers');
@@ -46,7 +48,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onEdit }) => {
     if (!window.confirm('Are you sure you want to delete this customer?')) return;
     setIsLoading(true);
     try {
-      await axios.delete(`http://192.168.1.3:5000/api/customers/${id}`);
+      await axios.delete(`${BASE_URL}/customers/${id}`);
       setCustomers(customers.filter((customer) => customer._id !== id));
       toast.success('Customer deleted successfully');
     } catch (err: any) {
@@ -87,7 +89,7 @@ const CustomerList: React.FC<CustomerListProps> = ({ onEdit }) => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Full Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Contact Person</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone Numer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Phone Number</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">TAX ID</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nickname</th>
@@ -102,13 +104,15 @@ const CustomerList: React.FC<CustomerListProps> = ({ onEdit }) => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.fullName}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.contactPerson}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {customer.productionCustomer?.nickname ||
-                     customer.weddingCustomer?.nickname ||
-                     customer.instoreCustomer?.phoneNumber ||
-                     'N/A'}
+                    {customer.instoreCustomer?.phoneNumber || customer.phoneNumber || 'N/A'}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.email || 'N/A'}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.taxId || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {customer.productionCustomer?.nickname ||
+                     customer.weddingCustomer?.nickname ||
+                     'N/A'}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{customer.status}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
