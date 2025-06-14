@@ -1130,7 +1130,7 @@ const fs = require('fs');
 const { isAbsolute } = require('path');
 
 app.post('/api/invoices/print', async (req, res) => {
-  const { Document_Type, Customer_Name, Address, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
+  const { Document_Type, Customer_Name, Address, TAX_ID, Items, Total_Amount, Customer_Mobile, Customer_Type, Purchasing_Order, Payment_Method, Discount_Price, Advance_Payment } = req.body;
 
   // Use current date/time for invoice generation
   const currentDate = new Date();
@@ -1208,6 +1208,8 @@ app.post('/api/invoices/print', async (req, res) => {
     doc.text(`${Customer_Name || 'Unknown Customer'}`, 20, doc.y);
     doc.text(`${Address || 'Unknown'}`, 20, doc.y);
     doc.text(`Customer Mobile: ${Customer_Mobile || 'N/A'}`, 180, doc.y, { align: 'right' });
+    doc.text(`TAX ID: ${TAX_ID || 'N/A'}`, 180, doc.y + 1, { align: 'right' });
+
     doc.moveDown(1);
 
     // Items Table
